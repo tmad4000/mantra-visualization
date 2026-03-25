@@ -248,6 +248,22 @@ body.ar #bottom{background:linear-gradient(to top,rgba(0,0,0,.4),transparent)}
 #det-log .log-mode{color:#6cf;font-weight:bold}
 #det-log .log-time{color:#555}
 #det-log .log-conf{color:#8f8}
+
+/* Deepgram transcript */
+#dg-section{border-color:rgba(80,140,255,.15)!important}
+#dg-transcript{
+  max-height:60px;overflow-y:auto;margin-top:4px;
+  background:rgba(0,5,20,.5);border-radius:4px;padding:4px 6px;
+  font-size:10px;line-height:1.5;color:#68a;
+  border:1px solid rgba(80,140,255,.08);
+}
+#dg-transcript .dg-final{color:#8cf}
+#dg-transcript .dg-interim{color:#456;font-style:italic}
+#dg-transcript .dg-match{color:#6f6;font-weight:bold;background:rgba(0,255,80,.08);padding:0 3px;border-radius:2px}
+#dg-status{font-size:9px;margin-top:3px}
+#dg-status .conn{color:#6f6}
+#dg-status .disc{color:#f66}
+#dg-status .wait{color:#cc6}
 </style>
 </head>
 <body>
@@ -320,13 +336,14 @@ body.ar #bottom{background:linear-gradient(to top,rgba(0,0,0,.4),transparent)}
     <div class="adbg-section">
       <div class="adbg-label">Detection Mode</div>
       <div id="mode-sel">
+        <button class="mode-btn sel" data-m="deepgram" onclick="setDetMode('deepgram')">Deepgram</button>
         <button class="mode-btn" data-m="naive" onclick="setDetMode('naive')">Naive</button>
         <button class="mode-btn" data-m="onset" onclick="setDetMode('onset')">Onset</button>
         <button class="mode-btn" data-m="band" onclick="setDetMode('band')">Band+Period</button>
-        <button class="mode-btn sel" data-m="spectral" onclick="setDetMode('spectral')">Spectral</button>
+        <button class="mode-btn" data-m="spectral" onclick="setDetMode('spectral')">Spectral</button>
         <button class="mode-btn" data-m="zcr" onclick="setDetMode('zcr')">ZCR</button>
       </div>
-      <div style="margin-top:4px;color:#454;font-size:8px" id="mode-desc">Spectral centroid voiced/unvoiced detection. Fires on silence-to-voice transitions. [DEFAULT]</div>
+      <div style="margin-top:4px;color:#454;font-size:8px" id="mode-desc">Deepgram streaming speech recognition with keyword boosting. Counts mantra end-markers in real time. [DEFAULT]</div>
     </div>
 
     <div class="adbg-section">
@@ -337,6 +354,7 @@ body.ar #bottom{background:linear-gradient(to top,rgba(0,0,0,.4),transparent)}
     <div class="adbg-section">
       <div class="adbg-label">All Mode Confidence (live)</div>
       <div id="conf-scores">
+        <div class="conf-row"><span class="conf-name">Deepgram</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-deepgram" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-deepgram">0</span></div>
         <div class="conf-row"><span class="conf-name">Naive</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-naive" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-naive">0</span></div>
         <div class="conf-row"><span class="conf-name">Onset</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-onset" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-onset">0</span></div>
         <div class="conf-row"><span class="conf-name">Band</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-band" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-band">0</span></div>
@@ -401,6 +419,12 @@ body.ar #bottom{background:linear-gradient(to top,rgba(0,0,0,.4),transparent)}
     <div class="adbg-section">
       <div class="adbg-label">Detection Log (last 20)</div>
       <div id="det-log"></div>
+    </div>
+
+    <div class="adbg-section" id="dg-section">
+      <div class="adbg-label">Deepgram Transcript</div>
+      <div id="dg-status"><span class="disc">DISCONNECTED</span></div>
+      <div id="dg-transcript"></div>
     </div>
   </div>
 
@@ -1034,13 +1058,14 @@ for(let i=0;i<28;i++){const b=document.createElement('div');b.className='abar';b
 
 let adbgOpen=false;
 let specCtx=null, waveCtx=null;
-let detMode='spectral'; // default: spectral centroid
+let detMode='deepgram'; // default: deepgram streaming speech recognition
 
 const MODE_DESCS = {
+  deepgram: 'Deepgram streaming speech recognition with keyword boosting. Counts mantra end-markers in real time. [DEFAULT]',
   naive:    'Avg energy > fixed threshold (0.12) held 700ms. No frequency discrimination.',
   onset:    'Spectral flux: detects sharp energy increases between FFT frames. 2.5s cooldown.',
   band:     'Voice-band (100-2000Hz) weighted energy with autocorrelation periodicity detection.',
-  spectral: 'Spectral centroid voiced/unvoiced detection. Fires on silence→voice transitions. [DEFAULT]',
+  spectral: 'Spectral centroid voiced/unvoiced detection. Fires on silence→voice transitions.',
   zcr:      'Zero-crossing rate + energy. Low ZCR + high energy = voiced onset.',
 };
 
@@ -1049,9 +1074,9 @@ const det = {
   // Shared
   prevFreq: null,
   frameCount: 0,
-  lastTrigger: {naive:0, onset:0, band:0, spectral:0, zcr:0},
-  confidence: {naive:0, onset:0, band:0, spectral:0, zcr:0},
-  fired: {naive:false, onset:false, band:false, spectral:false, zcr:false},
+  lastTrigger: {deepgram:0, naive:0, onset:0, band:0, spectral:0, zcr:0},
+  confidence: {deepgram:0, naive:0, onset:0, band:0, spectral:0, zcr:0},
+  fired: {deepgram:false, naive:false, onset:false, band:false, spectral:false, zcr:false},
 
   // Naive
   naiveOn: false,
@@ -1081,6 +1106,293 @@ const det = {
   zcrWasVoiced: false,
   zcrSilenceStart: 0,
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// DEEPGRAM STREAMING SPEECH RECOGNITION
+// ═══════════════════════════════════════════════════════════════════
+const DG_API_KEY = 'd36af20407dcf9f7037d697ad5ad5bda48e178e3';
+
+// Mantra end-marker patterns per deity
+const MANTRA_MARKERS = {
+  'manjushri': {
+    // Manjushri mantra ends with "DHIH" — match variants
+    patterns: [/\bd[h]?[ie]+\b/i, /\bdee\b/i, /\btee\b/i, /\bdie\b/i, /\bthe\b/i],
+    label: 'DHIH'
+  },
+  'guru-rinpoche': {
+    // Guru Rinpoche mantra ends with "...SIDDHI HUM" — match HUM/HUNG after siddhi/padma context
+    patterns: [/\bhh?[uo][nm]g?\b/i, /\bhung?\b/i, /\bhoom\b/i],
+    contextPatterns: [/siddh?i/i, /padma/i, /guru/i, /benza/i, /vajra/i],
+    label: 'HUM'
+  }
+};
+
+const dgState = {
+  ws: null,
+  speaking: false,
+  processor: null,
+  dgStream: null,   // MediaStream for resampled audio
+  lastTranscript: '',
+  contextBuffer: '', // rolling buffer of recent words for context matching
+};
+
+function dgUpdateStatus(status, cls) {
+  const el = document.getElementById('dg-status');
+  if (el) el.innerHTML = `<span class="${cls}">${status}</span>`;
+}
+
+function dgAddTranscript(text, isFinal, matched) {
+  const el = document.getElementById('dg-transcript');
+  if (!el) return;
+
+  if (isFinal && text.trim()) {
+    const div = document.createElement('div');
+    div.className = matched ? 'dg-final dg-match' : 'dg-final';
+    div.textContent = text;
+    el.prepend(div);
+    // Keep last 30 entries
+    while (el.children.length > 30) el.removeChild(el.lastChild);
+  } else if (!isFinal) {
+    // Update or create interim element
+    let interim = el.querySelector('.dg-interim');
+    if (!interim) {
+      interim = document.createElement('div');
+      interim.className = 'dg-interim';
+      el.prepend(interim);
+    }
+    interim.textContent = text || '...';
+  }
+}
+
+function dgCheckMantraMatch(transcript, isFinal) {
+  if (!transcript.trim()) return false;
+  const deity = S.deity;
+  const markers = MANTRA_MARKERS[deity];
+  if (!markers) return false;
+
+  const words = transcript.toLowerCase().split(/\s+/);
+  let matched = false;
+
+  for (const word of words) {
+    for (const pat of markers.patterns) {
+      if (pat.test(word)) {
+        // For guru-rinpoche, optionally check context (but don't require it — too strict for fast chanting)
+        const now = performance.now();
+        // Cooldown: at least 400ms between deepgram triggers (fast chanting ~2-3 per second)
+        if (now - det.lastTrigger.deepgram > 400) {
+          det.confidence.deepgram = isFinal ? 0.95 : 0.7;
+          det.lastTrigger.deepgram = now;
+          detFire('deepgram', det.confidence.deepgram);
+          matched = true;
+          // Update context buffer
+          dgState.contextBuffer = (dgState.contextBuffer + ' ' + transcript).slice(-200);
+        }
+        break;
+      }
+    }
+    if (matched) break;
+  }
+
+  // Also match full mantra phrases as single repetitions
+  const fullPhrases = deity === 'manjushri'
+    ? [/om\s+ah?\s+ra\s+pa\s+tsa\s+na\s+d/i, /ara\s*pa\s*cha/i]
+    : [/om\s+ah\s+h[uo]m\s+vajra/i, /padma\s+siddhi/i];
+
+  if (!matched) {
+    for (const pat of fullPhrases) {
+      if (pat.test(transcript)) {
+        const now = performance.now();
+        if (now - det.lastTrigger.deepgram > 400) {
+          det.confidence.deepgram = 0.99;
+          det.lastTrigger.deepgram = now;
+          detFire('deepgram', det.confidence.deepgram);
+          matched = true;
+        }
+        break;
+      }
+    }
+  }
+
+  return matched;
+}
+
+async function dgConnect() {
+  if (dgState.ws) dgDisconnect();
+
+  const deity = S.deity;
+  const markers = MANTRA_MARKERS[deity];
+
+  // Build keyword list for boosting
+  const keywords = deity === 'manjushri'
+    ? ['dhih','dee','di','om','ah','ra','pa','tsa','na','arapachana','manjushri']
+    : ['hum','hung','hoom','om','ah','vajra','guru','padma','siddhi','rinpoche','benzar'];
+
+  const params = new URLSearchParams({
+    model: 'nova-2',
+    language: 'en',
+    punctuate: 'false',
+    smart_format: 'false',
+    interim_results: 'true',
+    utterance_end_ms: '1500',
+    vad_events: 'true',
+    encoding: 'linear16',
+    sample_rate: '16000',
+    channels: '1',
+  });
+
+  // Add keyword boosting
+  keywords.forEach(kw => params.append('keywords', `${kw}:2`));
+
+  dgUpdateStatus('CONNECTING...', 'wait');
+
+  try {
+    const wsUrl = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+    const ws = new WebSocket(wsUrl, ['token', DG_API_KEY]);
+
+    ws.onopen = () => {
+      console.log('[Deepgram] WebSocket connected');
+      dgUpdateStatus('CONNECTED', 'conn');
+      dgState.ws = ws;
+      dgStartAudioPipeline();
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+
+        if (data.type === 'Results') {
+          const alt = data.channel?.alternatives?.[0];
+          if (!alt) return;
+
+          const transcript = alt.transcript || '';
+          const isFinal = data.is_final;
+          const speechFinal = data.speech_final;
+
+          // Track speaking state from VAD
+          if (transcript.trim()) {
+            dgState.speaking = true;
+          }
+
+          const matched = dgCheckMantraMatch(transcript, isFinal);
+          dgAddTranscript(transcript, isFinal, matched);
+
+          // Update confidence bar
+          if (transcript.trim()) {
+            const conf = alt.confidence || 0;
+            det.confidence.deepgram = Math.max(det.confidence.deepgram, conf);
+          }
+
+          // On speech_final, clear interim
+          if (speechFinal) {
+            const interim = document.querySelector('#dg-transcript .dg-interim');
+            if (interim) interim.remove();
+          }
+        }
+
+        if (data.type === 'SpeechStarted') {
+          dgState.speaking = true;
+        }
+
+        if (data.type === 'UtteranceEnd') {
+          dgState.speaking = false;
+        }
+
+      } catch (e) {
+        console.warn('[Deepgram] Parse error:', e);
+      }
+    };
+
+    ws.onerror = (err) => {
+      console.error('[Deepgram] WebSocket error:', err);
+      dgUpdateStatus('ERROR', 'disc');
+    };
+
+    ws.onclose = (evt) => {
+      console.log('[Deepgram] WebSocket closed:', evt.code, evt.reason);
+      dgUpdateStatus('DISCONNECTED', 'disc');
+      dgState.ws = null;
+      dgState.speaking = false;
+      dgStopAudioPipeline();
+    };
+
+    dgState.ws = ws;
+  } catch (e) {
+    console.error('[Deepgram] Connection failed:', e);
+    dgUpdateStatus('FAILED: ' + e.message, 'disc');
+  }
+}
+
+function dgStartAudioPipeline() {
+  if (!S.audioCtx || !S.stream) return;
+
+  const ctx = S.audioCtx;
+
+  // Create a ScriptProcessor to capture raw PCM and resample to 16kHz
+  // (AudioWorklet would be better but ScriptProcessor works everywhere)
+  const inputSR = ctx.sampleRate;
+  const outputSR = 16000;
+  const bufferSize = 4096;
+
+  const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
+  const source = ctx.createMediaStreamSource(S.stream);
+
+  // Downsampling state
+  let resampleBuffer = [];
+
+  processor.onaudioprocess = (e) => {
+    if (!dgState.ws || dgState.ws.readyState !== WebSocket.OPEN) return;
+
+    const input = e.inputBuffer.getChannelData(0);
+
+    // Downsample from inputSR to 16kHz
+    const ratio = inputSR / outputSR;
+    const outputLength = Math.floor(input.length / ratio);
+    const output = new Int16Array(outputLength);
+
+    for (let i = 0; i < outputLength; i++) {
+      const srcIdx = Math.floor(i * ratio);
+      // Clamp to [-1, 1] and convert to int16
+      const s = Math.max(-1, Math.min(1, input[srcIdx]));
+      output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+
+    // Send raw PCM bytes
+    dgState.ws.send(output.buffer);
+  };
+
+  source.connect(processor);
+  processor.connect(ctx.destination); // Required for ScriptProcessor to fire
+
+  dgState.processor = processor;
+  dgState._procSource = source;
+
+  console.log(`[Deepgram] Audio pipeline: ${inputSR}Hz → 16000Hz, buffer=${bufferSize}`);
+}
+
+function dgStopAudioPipeline() {
+  if (dgState.processor) {
+    try {
+      dgState.processor.disconnect();
+      dgState._procSource?.disconnect();
+    } catch (e) {}
+    dgState.processor = null;
+    dgState._procSource = null;
+  }
+}
+
+function dgDisconnect() {
+  dgStopAudioPipeline();
+  if (dgState.ws) {
+    try {
+      // Send close frame to Deepgram
+      dgState.ws.send(JSON.stringify({ type: 'CloseStream' }));
+      dgState.ws.close();
+    } catch (e) {}
+    dgState.ws = null;
+  }
+  dgState.speaking = false;
+  dgUpdateStatus('DISCONNECTED', 'disc');
+}
 
 function detLog(mode, conf){
   const el=document.getElementById('det-log');
@@ -1356,7 +1668,7 @@ function tickAudio(){
   det.frameCount++;
 
   // Reset per-frame fire flags
-  det.fired={naive:false,onset:false,band:false,spectral:false,zcr:false};
+  det.fired={deepgram:false,naive:false,onset:false,band:false,spectral:false,zcr:false};
 
   // Mini visualizer bars (existing UI)
   const bars=avE.querySelectorAll('.abar');
@@ -1375,8 +1687,13 @@ function tickAudio(){
   runSpectral(freqData, binCount, sr, fftSize);
   runZCR(timeData, freqData, binCount, sr, fftSize);
 
+  // Deepgram confidence decay (since it's event-driven, not per-frame)
+  if(det.confidence.deepgram > 0) det.confidence.deepgram *= 0.97;
+  if(det.confidence.deepgram < 0.01) det.confidence.deepgram = 0;
+
   // Update voiceOn for UI (based on active mode)
-  S.voiceOn = (detMode==='naive' && det.naiveOn)
+  S.voiceOn = (detMode==='deepgram' && dgState.speaking)
+           || (detMode==='naive' && det.naiveOn)
            || (detMode==='spectral' && det.voicedNow)
            || (detMode==='zcr' && det.zcrVoiced)
            || (detMode==='onset' && det.confidence.onset>0.8)
@@ -1446,7 +1763,7 @@ function tickAudio(){
   }
 
   // Confidence bars (all modes)
-  const modes=['naive','onset','band','spectral','zcr'];
+  const modes=['deepgram','naive','onset','band','spectral','zcr'];
   for(const m of modes){
     const c=det.confidence[m];
     const bar=$('cb-'+m);
@@ -1794,12 +2111,16 @@ window.setDetMode = function(m){
   document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));
   const desc=document.getElementById('mode-desc');
   if(desc) desc.textContent=MODE_DESCS[m]||'';
+  // If switching to deepgram while mic is on, ensure connection
+  if(m==='deepgram' && S.listening && !dgState.ws) dgConnect();
 };
 
 window.toggleMic = async function(){
   const btn=document.getElementById('mic-btn');
   if(S.listening){
     S.listening=false;btn.classList.remove('on');avE.classList.remove('on');
+    // Stop Deepgram
+    dgDisconnect();
     if(S.stream){S.stream.getTracks().forEach(t=>t.stop());S.stream=null;}
     return;
   }
@@ -1813,6 +2134,8 @@ window.toggleMic = async function(){
     S.analyser.smoothingTimeConstant=.75;
     src.connect(S.analyser);
     S.listening=true;btn.classList.add('on');avE.classList.add('on');
+    // Start Deepgram if it's the active mode (or always, so switching modes works)
+    dgConnect();
   }catch(e){
     console.error('Mic denied:',e);
     alert('Microphone access is needed for voice chanting detection.');
