@@ -1216,16 +1216,17 @@ async function dgConnect() {
   const markers = MANTRA_MARKERS[deity];
 
   // Build keyword list for boosting (single words + full phrases)
-  const keywords = deity === 'manjushri'
+  // Nova-3 uses "keyterm" (not "keywords") for vocabulary boosting
+  const keyterms = deity === 'manjushri'
     ? [
-        'dhih','dee','di','om','ah','ra','pa','tsa','na','arapachana','manjushri',
-        'om ah ra pa tsa na dhih',  // full mantra phrase
-        'om arapachana dhih',       // common condensed form
+        'dhih','dee','om','ah','ra','pa','tsa','na','arapachana','manjushri',
+        'om ah ra pa tsa na dhih',
+        'om arapachana dhih',
       ]
     : [
-        'hum','hung','hoom','om','ah','vajra','guru','padma','siddhi','rinpoche','benzar',
-        'om ah hum vajra guru padma siddhi hum',  // full mantra phrase
-        'vajra guru padma siddhi hum',             // latter half
+        'hum','hung','om','ah','vajra','guru','padma','siddhi','rinpoche',
+        'om ah hum vajra guru padma siddhi hum',
+        'vajra guru padma siddhi hum',
       ];
 
   const params = new URLSearchParams({
@@ -1241,12 +1242,8 @@ async function dgConnect() {
     channels: '1',
   });
 
-  // Add keyword boosting (intensity 1-10, higher = stronger bias)
-  // Full phrases get max boost; individual syllables get moderate boost
-  keywords.forEach(kw => {
-    const intensity = kw.includes(' ') ? 5 : 3;  // phrases:5, words:3
-    params.append('keywords', `${kw}:${intensity}`);
-  });
+  // Nova-3 keyterm prompting (no intensity number, just the term)
+  keyterms.forEach(kt => params.append('keyterm', kt));
 
   dgUpdateStatus('CONNECTING...', 'wait');
 
@@ -1314,7 +1311,8 @@ async function dgConnect() {
 
     ws.onclose = (evt) => {
       console.log('[Deepgram] WebSocket closed:', evt.code, evt.reason);
-      dgUpdateStatus('DISCONNECTED', 'disc');
+      const reason = evt.reason || (evt.code === 1008 ? 'Auth failed' : evt.code === 1011 ? 'Server error' : '');
+      dgUpdateStatus(`DISCONNECTED (${evt.code}${reason ? ': '+reason : ''})`, 'disc');
       dgState.ws = null;
       dgState.speaking = false;
       dgStopAudioPipeline();
