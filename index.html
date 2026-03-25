@@ -1241,8 +1241,12 @@ async function dgConnect() {
     channels: '1',
   });
 
-  // Add keyword boosting
-  keywords.forEach(kw => params.append('keywords', `${kw}:2`));
+  // Add keyword boosting (intensity 1-10, higher = stronger bias)
+  // Full phrases get max boost; individual syllables get moderate boost
+  keywords.forEach(kw => {
+    const intensity = kw.includes(' ') ? 5 : 3;  // phrases:5, words:3
+    params.append('keywords', `${kw}:${intensity}`);
+  });
 
   dgUpdateStatus('CONNECTING...', 'wait');
 
