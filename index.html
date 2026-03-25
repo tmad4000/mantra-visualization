@@ -1248,8 +1248,11 @@ async function dgConnect() {
   dgUpdateStatus('CONNECTING...', 'wait');
 
   try {
+    params.append('token', DG_API_KEY);
     const wsUrl = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
-    const ws = new WebSocket(wsUrl, ['token', DG_API_KEY]);
+    console.log('[Deepgram] Connecting to:', wsUrl.replace(DG_API_KEY, 'KEY_HIDDEN'));
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
       console.log('[Deepgram] WebSocket connected');
