@@ -1112,18 +1112,29 @@ const det = {
 // ═══════════════════════════════════════════════════════════════════
 const DG_API_KEY = 'd36af20407dcf9f7037d697ad5ad5bda48e178e3';
 
-// Mantra end-marker patterns per deity
-const MANTRA_MARKERS = {
+// Whole-phrase patterns per deity (only full mantra recitations trigger a count)
+const MANTRA_PHRASES = {
   'manjushri': {
-    // Manjushri mantra ends with "DHIH" — match variants
-    patterns: [/\bd[h]?[ie]+\b/i, /\bdee\b/i, /\btee\b/i, /\bdie\b/i, /\bthe\b/i],
-    label: 'DHIH'
+    // "Om Ah Ra Pa Tsa Na Dhih" — various transcription variants
+    patterns: [
+      /om\s+a[h]?\s+ra?\s+pa\s+[tc]+s?[ah]?\s+n[ah]?\s+d/i,  // om ah ra pa tsa na d(hih)
+      /ara\s*pa\s*[tc]h?a\s*na/i,                                // arapachana
+      /om\s+a\s+ra\s+pa/i,                                       // om a ra pa (beginning is enough with context)
+      /ra\s+pa\s+[tc]+s?a\s+na\s+d/i,                           // ra pa tsa na dhih (end portion)
+      /[tc]+s?a\s+na\s+d[h]?[ie]/i,                             // tsa na dhih (last 3 syllables)
+    ],
+    label: 'OM AH RA PA TSA NA DHIH'
   },
   'guru-rinpoche': {
-    // Guru Rinpoche mantra ends with "...SIDDHI HUM" — match HUM/HUNG after siddhi/padma context
-    patterns: [/\bhh?[uo][nm]g?\b/i, /\bhung?\b/i, /\bhoom\b/i],
-    contextPatterns: [/siddh?i/i, /padma/i, /guru/i, /benza/i, /vajra/i],
-    label: 'HUM'
+    // "Om Ah Hum Vajra Guru Padma Siddhi Hum"
+    patterns: [
+      /om\s+ah?\s+h[uo]m\s+vajr?a/i,                            // om ah hum vajra
+      /vajr?a\s+guru\s+padma/i,                                  // vajra guru padma
+      /guru\s+padma\s+siddh?i/i,                                 // guru padma siddhi
+      /padma\s+siddh?i\s+h[uo]/i,                               // padma siddhi hum
+      /siddh?i\s+h[uo][nm]?g?/i,                                // siddhi hum (final 2 syllables)
+    ],
+    label: 'OM AH HUM VAJRA GURU PADMA SIDDHI HUM'
   }
 };
 
@@ -1167,50 +1178,32 @@ function dgAddTranscript(text, isFinal, matched) {
 function dgCheckMantraMatch(transcript, isFinal) {
   if (!transcript.trim()) return false;
   const deity = S.deity;
-  const markers = MANTRA_MARKERS[deity];
-  if (!markers) return false;
+  const phrases = MANTRA_PHRASES[deity];
+  if (!phrases) return false;
 
-  const words = transcript.toLowerCase().split(/\s+/);
+  // Accumulate transcript into rolling buffer for cross-utterance matching
+  const text = (dgState.contextBuffer + ' ' + transcript).toLowerCase();
+
   let matched = false;
-
-  for (const word of words) {
-    for (const pat of markers.patterns) {
-      if (pat.test(word)) {
-        // For guru-rinpoche, optionally check context (but don't require it — too strict for fast chanting)
-        const now = performance.now();
-        // Cooldown: at least 400ms between deepgram triggers (fast chanting ~2-3 per second)
-        if (now - det.lastTrigger.deepgram > 400) {
-          det.confidence.deepgram = isFinal ? 0.95 : 0.7;
-          det.lastTrigger.deepgram = now;
-          detFire('deepgram', det.confidence.deepgram);
-          matched = true;
-          // Update context buffer
-          dgState.contextBuffer = (dgState.contextBuffer + ' ' + transcript).slice(-200);
-        }
-        break;
+  for (const pat of phrases.patterns) {
+    if (pat.test(text)) {
+      const now = performance.now();
+      // Cooldown: at least 400ms between triggers (fast chanting ~2-3 per second)
+      if (now - det.lastTrigger.deepgram > 400) {
+        det.confidence.deepgram = isFinal ? 0.95 : 0.75;
+        det.lastTrigger.deepgram = now;
+        detFire('deepgram', det.confidence.deepgram);
+        matched = true;
+        // Reset context buffer after a match so we don't double-count
+        dgState.contextBuffer = '';
       }
+      break;
     }
-    if (matched) break;
   }
 
-  // Also match full mantra phrases as single repetitions
-  const fullPhrases = deity === 'manjushri'
-    ? [/om\s+ah?\s+ra\s+pa\s+tsa\s+na\s+d/i, /ara\s*pa\s*cha/i]
-    : [/om\s+ah\s+h[uo]m\s+vajra/i, /padma\s+siddhi/i];
-
+  // Update rolling context buffer (keep last ~300 chars for cross-utterance phrase matching)
   if (!matched) {
-    for (const pat of fullPhrases) {
-      if (pat.test(transcript)) {
-        const now = performance.now();
-        if (now - det.lastTrigger.deepgram > 400) {
-          det.confidence.deepgram = 0.99;
-          det.lastTrigger.deepgram = now;
-          detFire('deepgram', det.confidence.deepgram);
-          matched = true;
-        }
-        break;
-      }
-    }
+    dgState.contextBuffer = (dgState.contextBuffer + ' ' + transcript).slice(-300);
   }
 
   return matched;
@@ -1236,12 +1229,12 @@ async function dgConnect() {
       ];
 
   const params = new URLSearchParams({
-    model: 'nova-2',
+    model: 'nova-3',
     language: 'en',
     punctuate: 'false',
     smart_format: 'false',
     interim_results: 'true',
-    utterance_end_ms: '1500',
+    utterance_end_ms: '500',
     vad_events: 'true',
     encoding: 'linear16',
     sample_rate: '16000',
