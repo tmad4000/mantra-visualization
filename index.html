@@ -1222,10 +1222,18 @@ async function dgConnect() {
   const deity = S.deity;
   const markers = MANTRA_MARKERS[deity];
 
-  // Build keyword list for boosting
+  // Build keyword list for boosting (single words + full phrases)
   const keywords = deity === 'manjushri'
-    ? ['dhih','dee','di','om','ah','ra','pa','tsa','na','arapachana','manjushri']
-    : ['hum','hung','hoom','om','ah','vajra','guru','padma','siddhi','rinpoche','benzar'];
+    ? [
+        'dhih','dee','di','om','ah','ra','pa','tsa','na','arapachana','manjushri',
+        'om ah ra pa tsa na dhih',  // full mantra phrase
+        'om arapachana dhih',       // common condensed form
+      ]
+    : [
+        'hum','hung','hoom','om','ah','vajra','guru','padma','siddhi','rinpoche','benzar',
+        'om ah hum vajra guru padma siddhi hum',  // full mantra phrase
+        'vajra guru padma siddhi hum',             // latter half
+      ];
 
   const params = new URLSearchParams({
     model: 'nova-2',
