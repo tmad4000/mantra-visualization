@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Vajrayana Mantra Visualization — AR</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#000;color:#e8d5b0;font-family:'Cinzel',serif;
+  overflow:hidden;height:100vh;width:100vw;
+  /* XREAL OLED: black pixels = see-through */
+}
+canvas{display:block}
+#canvas-container{position:fixed;inset:0;z-index:0}
+
+/* ====== UI Layer ====== */
+#ui{position:fixed;inset:0;z-index:10;pointer-events:none}
+#ui>*{pointer-events:auto}
+
+/* Top Bar */
+#top-bar{
+  position:absolute;top:0;left:0;right:0;
+  display:flex;justify-content:center;align-items:center;
+  padding:14px 16px;gap:8px;
+  background:linear-gradient(to bottom,rgba(0,0,0,.6),transparent);
+}
+.tab{
+  padding:8px 20px;background:rgba(255,255,255,.03);
+  border:1px solid rgba(232,213,176,.12);border-radius:24px;
+  color:#e8d5b0;font-family:'Cinzel',serif;font-size:11px;
+  letter-spacing:2px;cursor:pointer;transition:all .3s;text-transform:uppercase;
+}
+.tab:hover{background:rgba(255,255,255,.07)}
+.tab.on{background:rgba(232,213,176,.1);border-color:rgba(232,213,176,.4);box-shadow:0 0 12px rgba(232,213,176,.12)}
+
+/* Stage / Info panels */
+.panel{
+  position:absolute;top:58px;padding:10px 14px;
+  background:rgba(0,0,0,.45);border:1px solid rgba(232,213,176,.06);
+  border-radius:8px;backdrop-filter:blur(6px);
+  transition:opacity .3s;
+}
+.panel:hover{opacity:1!important}
+#stage-panel{left:16px}
+#info-panel{right:16px;max-width:220px;opacity:.55}
+.panel h4{font-size:12px;letter-spacing:2px;color:#ffd896;margin-bottom:3px}
+.panel p{font-size:10px;color:rgba(232,213,176,.5);font-family:system-ui,sans-serif;line-height:1.4}
+
+/* Bottom */
+#bottom{
+  position:absolute;bottom:0;left:0;right:0;
+  display:flex;flex-direction:column;align-items:center;
+  padding:10px 16px 22px;
+  background:linear-gradient(to top,rgba(0,0,0,.65),transparent);
+}
+#counter{font-size:11px;letter-spacing:3px;color:rgba(232,213,176,.55);margin-bottom:6px}
+#counter b{font-size:32px;font-weight:900;color:#e8d5b0;text-shadow:0 0 12px rgba(232,213,176,.25)}
+#bar{width:240px;height:2px;background:rgba(232,213,176,.06);border-radius:1px;margin-bottom:10px;overflow:hidden}
+#bar-fill{height:100%;width:0%;background:linear-gradient(90deg,rgba(232,213,176,.15),rgba(255,200,100,.6));transition:width .3s}
+#mantra{
+  font-size:18px;letter-spacing:4px;color:rgba(232,213,176,.45);
+  text-shadow:0 0 16px rgba(232,213,176,.15);
+  transition:all .3s;text-align:center;pointer-events:none;margin-bottom:8px;
+}
+#mantra.pulse{color:rgba(255,223,150,.85);text-shadow:0 0 25px rgba(255,200,100,.4),0 0 50px rgba(255,180,50,.2);transform:scale(1.03)}
+
+/* Controls */
+#ctrls{display:flex;align-items:center;gap:10px}
+.btn{
+  width:48px;height:48px;border-radius:50%;
+  border:1.5px solid rgba(232,213,176,.18);
+  background:rgba(232,213,176,.03);color:#e8d5b0;
+  font-size:16px;cursor:pointer;transition:all .3s;
+  display:flex;align-items:center;justify-content:center;
+}
+.btn:hover{background:rgba(232,213,176,.08);border-color:rgba(232,213,176,.35)}
+.btn.on{background:rgba(232,213,176,.12);border-color:rgba(232,213,176,.5);box-shadow:0 0 16px rgba(232,213,176,.15)}
+#chant-btn{width:64px;height:64px;font-size:11px;letter-spacing:1px;font-family:'Cinzel',serif}
+
+/* Audio vis */
+#aud-vis{display:flex;gap:2px;align-items:flex-end;height:24px;justify-content:center;opacity:0;transition:opacity .3s;margin-bottom:6px}
+#aud-vis.on{opacity:1}
+.abar{width:2px;background:linear-gradient(to top,rgba(232,213,176,.1),rgba(255,200,100,.45));border-radius:1px;transition:height .07s}
+
+/* Merge */
+#merge-btn{
+  display:none;position:absolute;top:50%;right:16px;transform:translateY(-50%);
+  padding:10px 18px;background:rgba(255,200,100,.06);
+  border:1px solid rgba(255,200,100,.3);border-radius:24px;
+  color:#ffd896;font-family:'Cinzel',serif;font-size:11px;
+  letter-spacing:2px;cursor:pointer;transition:all .4s;
+  animation:pg 2s ease-in-out infinite;
+}
+#merge-btn:hover{background:rgba(255,200,100,.12);box-shadow:0 0 25px rgba(255,200,100,.2)}
+@keyframes pg{0%,100%{box-shadow:0 0 8px rgba(255,200,100,.06)}50%{box-shadow:0 0 20px rgba(255,200,100,.2)}}
+
+/* Reticle */
+#reticle-hint{
+  display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:50;text-align:center;pointer-events:none;
+}
+#reticle-ring{
+  width:50px;height:50px;border:2px solid rgba(255,255,255,.35);border-radius:50%;
+  margin:0 auto 10px;animation:rp 1.4s ease-in-out infinite;
+}
+#reticle-hint p{font-size:12px;color:rgba(255,255,255,.5);font-family:system-ui,sans-serif}
+@keyframes rp{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.08);opacity:.9}}
+
+/* Intro */
+#intro{
+  position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.97);
+  display:flex;align-items:center;justify-content:center;transition:opacity .7s;
+}
+#intro.off{opacity:0;pointer-events:none}
+#intro-box{text-align:center;max-width:520px;padding:24px}
+#intro-box h1{
+  font-size:28px;letter-spacing:7px;margin-bottom:6px;
+  background:linear-gradient(135deg,#ffd896,#e8d5b0,#ffd896);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+#intro-box h2{font-size:11px;letter-spacing:5px;color:rgba(232,213,176,.3);margin-bottom:28px;font-weight:400}
+#intro-box p{font-family:system-ui,sans-serif;font-size:12px;line-height:1.7;color:rgba(232,213,176,.5);margin-bottom:10px}
+.ibtn{
+  margin-top:18px;padding:12px 36px;
+  background:rgba(232,213,176,.06);border:1px solid rgba(232,213,176,.2);
+  border-radius:24px;color:#e8d5b0;font-family:'Cinzel',serif;
+  font-size:13px;letter-spacing:3px;cursor:pointer;transition:all .4s;
+  display:inline-block;margin-right:8px;
+}
+.ibtn:hover{background:rgba(232,213,176,.12);border-color:rgba(232,213,176,.35);box-shadow:0 0 24px rgba(232,213,176,.12)}
+.ibtn.ar{border-color:rgba(100,200,255,.25);color:#8cf}
+.ibtn.ar:hover{background:rgba(100,200,255,.08);border-color:rgba(100,200,255,.4);box-shadow:0 0 24px rgba(100,200,255,.12)}
+#ar-stat{font-size:10px;color:rgba(100,200,255,.45);margin-top:8px;font-family:system-ui,sans-serif}
+
+/* AR-active UI adjustments */
+body.ar #info-panel,body.ar #stage-panel{opacity:.25;transform:scale(.9)}
+body.ar #top-bar{background:none}
+body.ar #bottom{background:linear-gradient(to top,rgba(0,0,0,.4),transparent)}
+
+/* ====== Debug Controls (bottom-left) ====== */
+#dbg-ctrls{
+  position:absolute;bottom:24px;left:16px;
+  display:flex;flex-direction:column;gap:5px;
+  opacity:.2;transition:opacity .3s;z-index:20;
+}
+#dbg-ctrls:hover{opacity:.85}
+.dbg-btn{
+  padding:5px 10px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);border-radius:6px;
+  color:rgba(255,255,255,.6);font-family:monospace;font-size:10px;
+  cursor:pointer;transition:all .2s;text-align:left;white-space:nowrap;
+}
+.dbg-btn:hover{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.3)}
+.dbg-row{display:flex;gap:4px}
+
+/* ====== Audio Debug Panel ====== */
+#audio-dbg{
+  display:none;position:fixed;top:50%;right:12px;transform:translateY(-50%);
+  width:320px;max-height:80vh;overflow-y:auto;
+  background:rgba(0,0,0,.92);border:1px solid rgba(0,255,100,.15);
+  border-radius:10px;padding:12px;z-index:60;
+  font-family:'SF Mono',Consolas,monospace;font-size:10px;color:#8f8;
+  backdrop-filter:blur(8px);
+  box-shadow:0 0 30px rgba(0,255,80,.05);
+}
+#audio-dbg.open{display:block}
+#audio-dbg h5{
+  font-size:11px;letter-spacing:2px;color:#6f6;margin-bottom:8px;
+  display:flex;justify-content:space-between;align-items:center;
+}
+#audio-dbg h5 span{cursor:pointer;color:#666;font-size:14px}
+#audio-dbg h5 span:hover{color:#f66}
+
+.adbg-section{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(0,255,100,.08)}
+.adbg-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.adbg-label{color:#686;font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px}
+.adbg-val{color:#afa;font-size:12px;font-weight:bold}
+.adbg-val.red{color:#f66}
+.adbg-val.grn{color:#6f6}
+.adbg-val.ylw{color:#ff6}
+
+/* Spectrum canvas */
+#spectrum-canvas{width:100%;height:80px;border-radius:4px;background:rgba(0,20,0,.4);margin-bottom:4px}
+#waveform-canvas{width:100%;height:50px;border-radius:4px;background:rgba(0,20,0,.4);margin-bottom:4px}
+
+/* Volume meter */
+#vol-meter-wrap{
+  width:100%;height:12px;background:rgba(0,20,0,.5);border-radius:6px;overflow:hidden;
+  border:1px solid rgba(0,255,100,.1);margin-bottom:2px;
+}
+#vol-meter-fill{
+  height:100%;width:0%;border-radius:6px;
+  transition:width .08s,background .15s;
+}
+.vol-lo{background:linear-gradient(90deg,#0a0,#2d2)}
+.vol-mid{background:linear-gradient(90deg,#0a0,#cc0)}
+.vol-hi{background:linear-gradient(90deg,#0a0,#cc0,#f44)}
+
+/* Frequency bands */
+#freq-bands{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:4px}
+.fband{
+  text-align:center;padding:3px;background:rgba(0,20,0,.3);border-radius:4px;
+  border:1px solid rgba(0,255,100,.06);
+}
+.fband .fband-name{font-size:8px;color:#565}
+.fband .fband-val{font-size:11px;font-weight:bold;color:#8f8}
+
+/* Detection status */
+#detect-status{
+  display:inline-block;padding:3px 10px;border-radius:10px;font-size:10px;font-weight:bold;
+  letter-spacing:1px;
+}
+#detect-status.yes{background:rgba(0,255,80,.15);color:#6f6;border:1px solid rgba(0,255,80,.3)}
+#detect-status.no{background:rgba(255,60,60,.1);color:#f66;border:1px solid rgba(255,60,60,.2)}
+
+/* Detection mode selector */
+#mode-sel{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.mode-btn{
+  padding:3px 7px;background:rgba(0,40,0,.4);
+  border:1px solid rgba(0,255,100,.1);border-radius:4px;
+  color:#686;font-family:monospace;font-size:9px;cursor:pointer;
+  transition:all .15s;
+}
+.mode-btn:hover{border-color:rgba(0,255,100,.3);color:#8f8}
+.mode-btn.sel{background:rgba(0,255,100,.12);border-color:rgba(0,255,100,.4);color:#6f6;font-weight:bold}
+
+/* Confidence scores */
+#conf-scores{margin-top:6px}
+.conf-row{
+  display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:9px;
+}
+.conf-name{width:60px;color:#565;text-align:right}
+.conf-bar-wrap{flex:1;height:8px;background:rgba(0,20,0,.4);border-radius:4px;overflow:hidden;position:relative}
+.conf-bar{height:100%;border-radius:4px;transition:width .1s,background .15s}
+.conf-val{width:32px;text-align:right;color:#8f8;font-weight:bold}
+.conf-fire{animation:confFlash .3s}
+@keyframes confFlash{0%{background:rgba(0,255,100,.3)}100%{background:transparent}}
+
+/* Detection log */
+#det-log{
+  max-height:80px;overflow-y:auto;margin-top:4px;
+  background:rgba(0,10,0,.4);border-radius:4px;padding:4px 6px;
+  font-size:8px;line-height:1.5;color:#565;
+}
+#det-log .log-entry{border-bottom:1px solid rgba(0,255,100,.04);padding:1px 0}
+#det-log .log-mode{color:#6cf;font-weight:bold}
+#det-log .log-time{color:#555}
+#det-log .log-conf{color:#8f8}
+</style>
+</head>
+<body>
+
+<!-- Intro Screen -->
+<div id="intro">
+  <div id="intro-box">
+    <h1>MANTRA VISUALIZATION</h1>
+    <h2>VAJRAYANA GENERATION STAGE</h2>
+    <p>Through mantra recitation, the enlightened being manifests before you. In AR mode, they appear in your physical space.</p>
+    <p>Chant the mantra aloud (mic input) or press Space / tap the button. The being becomes more vivid with each repetition.</p>
+    <p style="color:rgba(232,213,176,.3);font-size:10px">XREAL AR glasses: the deity manifests as light in your room. Black = transparent on OLED.</p>
+    <br>
+    <button class="ibtn" onclick="startApp(false)">SCREEN MODE</button>
+    <button class="ibtn ar" id="ar-start" onclick="startApp(true)">ENTER AR</button>
+    <div id="ar-stat"></div>
+  </div>
+</div>
+
+<!-- AR Placement Reticle -->
+<div id="reticle-hint">
+  <div id="reticle-ring"></div>
+  <p>Tap to place the deity</p>
+</div>
+
+<!-- Canvas -->
+<div id="canvas-container"></div>
+
+<!-- UI -->
+<div id="ui">
+  <div id="top-bar">
+    <button class="tab on" data-d="manjushri" onclick="pickDeity('manjushri')">MANJUSHRI</button>
+    <button class="tab" data-d="guru-rinpoche" onclick="pickDeity('guru-rinpoche')">GURU RINPOCHE</button>
+  </div>
+  <div class="panel" id="stage-panel">
+    <h4 id="stage-n">ARISING FROM EMPTINESS</h4>
+    <p id="stage-d">The seed syllable appears in luminous space</p>
+  </div>
+  <div class="panel" id="info-panel">
+    <h4 id="info-n">MANJUSHRI</h4>
+    <p id="info-t">Bodhisattva of Transcendent Wisdom. Golden-bodied, eternally youthful, wielding the flaming sword that cuts through ignorance.</p>
+  </div>
+  <div id="aud-vis"></div>
+  <button id="merge-btn" onclick="doMerge()">DISSOLVE &amp; MERGE</button>
+
+  <!-- Debug Controls -->
+  <div id="dbg-ctrls">
+    <div class="adbg-label" style="color:#555;margin-bottom:2px">DEBUG</div>
+    <div class="dbg-row">
+      <button class="dbg-btn" onclick="dbgAdd(1)">+1</button>
+      <button class="dbg-btn" onclick="dbgAdd(10)">+10</button>
+      <button class="dbg-btn" onclick="dbgAdd(108)">+108</button>
+    </div>
+    <div class="dbg-row">
+      <button class="dbg-btn" onclick="doReset()">Reset 0</button>
+      <button class="dbg-btn" onclick="dbgSwap()">Swap Deity</button>
+    </div>
+    <button class="dbg-btn" onclick="dbgToggleAudio()">Audio Debug Panel</button>
+  </div>
+
+  <!-- Audio Debug Panel -->
+  <div id="audio-dbg">
+    <h5>AUDIO DEBUG <span onclick="dbgToggleAudio()">&times;</span></h5>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Mic Status</div>
+      <div><span id="adbg-mic" class="adbg-val red">OFF</span></div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Detection Mode</div>
+      <div id="mode-sel">
+        <button class="mode-btn" data-m="naive" onclick="setDetMode('naive')">Naive</button>
+        <button class="mode-btn" data-m="onset" onclick="setDetMode('onset')">Onset</button>
+        <button class="mode-btn" data-m="band" onclick="setDetMode('band')">Band+Period</button>
+        <button class="mode-btn sel" data-m="spectral" onclick="setDetMode('spectral')">Spectral</button>
+        <button class="mode-btn" data-m="zcr" onclick="setDetMode('zcr')">ZCR</button>
+      </div>
+      <div style="margin-top:4px;color:#454;font-size:8px" id="mode-desc">Spectral centroid voiced/unvoiced detection. Fires on silence-to-voice transitions. [DEFAULT]</div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Speech Detection</div>
+      <div id="detect-status" class="no">NO SPEECH</div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">All Mode Confidence (live)</div>
+      <div id="conf-scores">
+        <div class="conf-row"><span class="conf-name">Naive</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-naive" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-naive">0</span></div>
+        <div class="conf-row"><span class="conf-name">Onset</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-onset" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-onset">0</span></div>
+        <div class="conf-row"><span class="conf-name">Band</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-band" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-band">0</span></div>
+        <div class="conf-row"><span class="conf-name">Spectral</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-spectral" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-spectral">0</span></div>
+        <div class="conf-row"><span class="conf-name">ZCR</span><div class="conf-bar-wrap"><div class="conf-bar" id="cb-zcr" style="width:0%;background:#484"></div></div><span class="conf-val" id="cv-zcr">0</span></div>
+      </div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Volume Level</div>
+      <div id="vol-meter-wrap"><div id="vol-meter-fill" class="vol-lo"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:2px">
+        <span>RMS: <span id="adbg-rms" class="adbg-val">0.000</span></span>
+        <span>Peak: <span id="adbg-peak" class="adbg-val">0.000</span></span>
+        <span>Avg: <span id="adbg-avg" class="adbg-val">0.000</span></span>
+      </div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Frequency Spectrum</div>
+      <canvas id="spectrum-canvas" width="296" height="80"></canvas>
+      <div style="display:flex;justify-content:space-between;color:#565;font-size:8px">
+        <span>0 Hz</span><span id="adbg-sr">24000 Hz</span>
+      </div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Waveform (Time Domain)</div>
+      <canvas id="waveform-canvas" width="296" height="50"></canvas>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Frequency Bands</div>
+      <div id="freq-bands">
+        <div class="fband"><div class="fband-name">Sub</div><div class="fband-val" id="fb-sub">0</div></div>
+        <div class="fband"><div class="fband-name">Low</div><div class="fband-val" id="fb-low">0</div></div>
+        <div class="fband"><div class="fband-name">Mid</div><div class="fband-val" id="fb-mid">0</div></div>
+        <div class="fband"><div class="fband-name">Hi-Mid</div><div class="fband-val" id="fb-himid">0</div></div>
+        <div class="fband"><div class="fband-name">High</div><div class="fband-val" id="fb-high">0</div></div>
+      </div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Peak Frequency</div>
+      <div><span id="adbg-peakfreq" class="adbg-val ylw">-- Hz</span></div>
+      <div style="color:#565;font-size:9px;margin-top:2px">
+        FFT Size: <span id="adbg-fft">256</span> |
+        Bins: <span id="adbg-bins">128</span> |
+        Res: <span id="adbg-res">--</span> Hz/bin
+      </div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Chant Triggers</div>
+      <div style="display:flex;justify-content:space-between">
+        <span>Total: <span id="adbg-triggers" class="adbg-val">0</span></span>
+        <span>Voice: <span id="adbg-vtriggers" class="adbg-val">0</span></span>
+        <span>Mode: <span id="adbg-lastmode" class="adbg-val ylw">--</span></span>
+      </div>
+    </div>
+
+    <div class="adbg-section">
+      <div class="adbg-label">Detection Log (last 20)</div>
+      <div id="det-log"></div>
+    </div>
+  </div>
+
+  <div id="bottom">
+    <div id="counter"><b id="rep-num">0</b> <span style="font-size:10px;margin-left:4px">REPETITIONS</span></div>
+    <div id="bar"><div id="bar-fill"></div></div>
+    <div id="mantra">OM AH RA PA TSA NA DHIH</div>
+    <div id="ctrls">
+      <button class="btn" id="mic-btn" onclick="toggleMic()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+      <button class="btn" id="chant-btn" onclick="doChant()">CHANT</button>
+      <button class="btn" id="reset-btn" onclick="doReset()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+/* ═══════════════════════════════════════════════════
+   CONSTANTS — XREAL HARDWARE PROFILE
+   ═══════════════════════════════════════════════════ */
+const XREAL_FOV_DEG    = 57;         // One Pro; safe for all models (50-70°)
+const DEITY_DISTANCE   = 2.0;        // metres in front
+const DEITY_HEIGHT     = -0.3;       // metres below eye (seated figure on floor)
+const DEITY_SCALE_AR   = 0.55;       // ~1.1 m tall seated figure in real space
+const EYE_HEIGHT       = 1.5;        // standing user
+const TARGET_REPS      = 108;        // traditional mala count
+
+/* ═══════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════ */
+const S = {
+  deity: 'manjushri',
+  reps: 0,
+  intensity: 0,       // smoothed 0→1
+  target: 0,          // target intensity
+  merging: false,
+  mergeT: 0,
+  pulse: 0,           // chant flash (decays)
+  pulseT: 0,
+  lastChant: 0,
+  // AR
+  arActive: false,
+  blendMode: 'opaque',  // 'opaque' | 'additive' | 'alpha-blend'
+  xrSession: null,
+  xrRefSpace: null,
+  xrHitSrc: null,
+  placed: false,
+  reticleMatrix: new THREE.Matrix4(),
+  // Audio
+  listening: false,
+  audioCtx: null,
+  analyser: null,
+  stream: null,
+  voiceOn: false,
+  voiceTimer: null,
+};
+
+/* ═══════════════════════════════════════════════════
+   DEITY DATA
+   ═══════════════════════════════════════════════════ */
+const D = {
+  manjushri: {
+    name:'MANJUSHRI',
+    mantra:'OM AH RA PA TSA NA DHIH',
+    color: [0.95,0.75,0.10],
+    color2:[1.00,0.50,0.05],
+    aura: [1.00,0.85,0.30],
+    info:'Bodhisattva of Transcendent Wisdom. Golden-bodied, eternally youthful, wielding the flaming sword that cuts through ignorance. In his left hand rests the Prajnaparamita Sutra upon a blue lotus.',
+    stages:[
+      {n:'ARISING FROM EMPTINESS',     d:'The seed syllable DHIH appears in luminous space',t:0},
+      {n:'SEED SYLLABLE RADIATING',    d:'Light emanates from DHIH, purifying obscurations',t:.10},
+      {n:'FORM BEGINNING TO APPEAR',   d:'The golden body of Manjushri takes shape',        t:.25},
+      {n:'BODY OF LIGHT EMERGING',     d:'The sword of wisdom begins to blaze',             t:.40},
+      {n:'VIVID APPEARANCE',           d:'Manjushri appears radiant, youthful, golden',      t:.60},
+      {n:'FULLY PRESENT',             d:'The wisdom deity is completely manifest',           t:.80},
+      {n:'READY TO MERGE',            d:'Manjushri radiates boundless wisdom-light',         t:.95},
+    ]
+  },
+  'guru-rinpoche': {
+    name:'GURU RINPOCHE',
+    mantra:'OM AH HUM VAJRA GURU PADMA SIDDHI HUM',
+    color: [0.90,0.30,0.30],
+    color2:[0.60,0.20,0.80],
+    aura: [1.00,0.50,0.50],
+    info:'The Lotus-Born Master, second Buddha. White with a reddish hue, wearing the lotus hat of liberation. He holds a golden vajra at his heart and the katvanga staff upon his shoulder.',
+    stages:[
+      {n:'ARISING FROM EMPTINESS',     d:'The seed syllable HUM appears in luminous space',t:0},
+      {n:'SEED SYLLABLE RADIATING',    d:'Light emanates from HUM, clearing all obstacles', t:.10},
+      {n:'FORM BEGINNING TO APPEAR',   d:'The form of the Lotus-Born takes shape',          t:.25},
+      {n:'BODY OF LIGHT EMERGING',     d:'The vajra and lotus hat become visible',           t:.40},
+      {n:'VIVID APPEARANCE',           d:'Guru Rinpoche appears in full splendor',           t:.60},
+      {n:'FULLY PRESENT',             d:'The Vajra Guru is completely manifest',             t:.80},
+      {n:'READY TO MERGE',            d:'Padmasambhava radiates compassion and power',       t:.95},
+    ]
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   RENDERER — alpha:true for AR transparency
+   ═══════════════════════════════════════════════════ */
+const container = document.getElementById('canvas-container');
+const renderer  = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping  = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.3;
+renderer.setClearColor(0x000000, 0);  // transparent — essential for AR
+renderer.xr.enabled = false;          // enabled on demand
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+container.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.05, 200);
+camera.position.set(0, 0.5, 5);
+
+/* ═══════════════════════════════════════════════════
+   POST-PROCESSING (screen mode only)
+   Bypassed entirely in AR — bloom adds non-black
+   fragments that would show on XREAL lenses.
+   ═══════════════════════════════════════════════════ */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 1.5, 0.4, 0.85);
+composer.addPass(bloom);
+
+/* ═══════════════════════════════════════════════════
+   GLSL NOISE (compact)
+   ═══════════════════════════════════════════════════ */
+const N=`
+vec3 m289(vec3 x){return x-floor(x/289.)*289.;}
+vec4 m289(vec4 x){return x-floor(x/289.)*289.;}
+vec4 perm(vec4 x){return m289(((x*34.)+1.)*x);}
+float snoise(vec3 v){
+  const vec2 C=vec2(1./6.,1./3.);
+  vec3 i=floor(v+dot(v,C.yyy)),x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz),l=1.-g,i1=min(g,l.zxy),i2=max(g,l.zxy);
+  vec3 x1=x0-i1+C.xxx,x2=x0-i2+C.yyy,x3=x0-.5;
+  i=m289(i);
+  vec4 p=perm(perm(perm(i.z+vec4(0,i1.z,i2.z,1))+i.y+vec4(0,i1.y,i2.y,1))+i.x+vec4(0,i1.x,i2.x,1));
+  vec4 j=p-49.*floor(p/49.);
+  vec4 x_=floor(j/7.),y_=floor(j-7.*x_);
+  vec4 x=x_/7.-.5+.5/7.,y=y_/7.-.5+.5/7.,h=1.-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy),b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.+1.,s1=floor(b1)*2.+1.,sh=-step(h,vec4(0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy,a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x),p1=vec3(a0.zw,h.y),p2=vec3(a1.xy,h.z),p3=vec3(a1.zw,h.w);
+  vec4 nr=1.79284291400159-.85373472095314*vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3));
+  p0*=nr.x;p1*=nr.y;p2*=nr.z;p3*=nr.w;
+  vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);
+  m*=m; return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}`;
+
+/* ═══════════════════════════════════════════════════
+   SHARED UNIFORM BLOCK
+   Every animated material reads from this.
+   ═══════════════════════════════════════════════════ */
+const U = {
+  time:      {value:0},
+  intensity: {value:0},
+  pulse:     {value:0},
+  mergeT:    {value:0},
+  col1:      {value:new THREE.Color(...D.manjushri.color)},
+  col2:      {value:new THREE.Color(...D.manjushri.color2)},
+  auraCol:   {value:new THREE.Color(...D.manjushri.aura)},
+  blendAdd:  {value:0},  // 1.0 = additive display (XREAL see-through), 0.0 = alpha-blend / screen
+};
+
+/* ═══════════════════════════════════════════════════
+   LIGHT-BODY SHADER
+   Optimised: single shared uniform block, reduced
+   ALU ops for XREAL's mobile GPU.
+   environmentBlendMode-aware: in additive mode the
+   alpha channel is ignored and only RGB adds light;
+   we boost emissive and skip any darkening.
+   ═══════════════════════════════════════════════════ */
+const bodyVS = N + `
+uniform float time, intensity, pulse;
+varying vec3 vN, vP;
+varying float vD;
+void main(){
+  vN = normalize(normalMatrix * normal);
+  vP = position;
+  float n = snoise(position*2.+time*.3)*.1;
+  vD = n;
+  vec3 pos = position;
+  float eth = 1.-intensity*.7;
+  pos += normal * n * eth;
+  pos += normal * pulse * .04 * sin(time*8.);
+  pos.y += sin(time*.8)*.015*intensity;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos,1.);
+}`;
+
+const bodyFS = `
+uniform float time, intensity, pulse, mergeT, blendAdd;
+uniform vec3 col1, col2;
+varying vec3 vN, vP;
+varying float vD;
+void main(){
+  vec3 vDir = normalize(cameraPosition - vP);
+  float fres = pow(1.-max(dot(vN,vDir),0.), 2.5);
+  float flow = sin(vP.y*5.-time*2.)*.5+.5;
+  vec3 col = mix(col1, col2, flow*.3+vD);
+
+  float inner  = smoothstep(0.,1.,1.-fres) * intensity;
+  float edge   = fres * (.5+.5*(1.-intensity*.5));
+  float ch     = sin(vP.y*8.+vP.x*4.-time*3.)*.5+.5;
+  ch          *= sin(vP.y*6.-vP.z*3.-time*2.)*.5+.5;
+  float pB     = pulse * .45;
+
+  float a = (inner*.55 + edge*.75 + ch*.25*intensity + pB) * intensity;
+  a = clamp(a,0.,1.);
+  a = mix(a*.45, a, intensity*intensity);
+
+  vec3 fc = col * (1.+edge*2.+pB);
+
+  // Additive display: boost brightness, alpha is cosmetic (RGB-only compositing)
+  fc *= (1. + blendAdd * .6);
+
+  // Merge dissolve
+  if(mergeT > 0.){
+    float dis = sin(vP.x*20.+time*5.)*cos(vP.y*15.+time*3.)*sin(vP.z*18.+time*4.)*.5+.5;
+    if(dis < mergeT){ fc = vec3(1.,.95,.8); a *= (1.-mergeT); }
+  }
+
+  gl_FragColor = vec4(fc, a);
+}`;
+
+const bodyMat = new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: bodyVS,
+  fragmentShader: bodyFS,
+  transparent:true, depthWrite:false, side:THREE.DoubleSide,
+  blending:THREE.AdditiveBlending,
+});
+
+/* ═══════════════════════════════════════════════════
+   AURA SHADER (inner / outer shells)
+   ═══════════════════════════════════════════════════ */
+function mkAuraMat(scale){
+  return new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader:`
+      uniform float time, intensity;
+      varying vec3 vN, vP;
+      void main(){
+        vN=normalize(normalMatrix*normal); vP=position;
+        vec3 pos=position+normal*sin(position.y*3.+time*1.2)*.04*intensity;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(pos,1.);
+      }`,
+    fragmentShader:`
+      uniform float time, intensity, pulse, blendAdd;
+      uniform vec3 auraCol;
+      varying vec3 vN, vP;
+      void main(){
+        vec3 vDir=normalize(cameraPosition-vP);
+        float f=pow(1.-max(dot(vN,vDir),0.),3.5);
+        float a=f*intensity*.35*(1.+pulse*.25);
+        vec3 c=auraCol*(1.+f*1.5)*(1.+blendAdd*.4);
+        gl_FragColor=vec4(c,a);
+      }`,
+    transparent:true, depthWrite:false, side:THREE.BackSide,
+    blending:THREE.AdditiveBlending,
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   PARTICLES
+   Low count for mobile GPU. AdditiveBlending ensures
+   black=transparent on XREAL.
+   ═══════════════════════════════════════════════════ */
+function mkPart(cnt, rad, colorArr){
+  const g=new THREE.BufferGeometry();
+  const p=new Float32Array(cnt*3), v=new Float32Array(cnt*3), ph=new Float32Array(cnt);
+  for(let i=0;i<cnt;i++){
+    const th=Math.random()*6.283, phi=Math.random()*3.14, r=rad*(.5+Math.random()*.5);
+    p[i*3]=r*Math.sin(phi)*Math.cos(th);
+    p[i*3+1]=r*Math.cos(phi);
+    p[i*3+2]=r*Math.sin(phi)*Math.sin(th);
+    v[i*3]=(Math.random()-.5)*.008;
+    v[i*3+1]=Math.random()*.004+.002;
+    v[i*3+2]=(Math.random()-.5)*.008;
+    ph[i]=Math.random()*6.283;
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  g.setAttribute('velocity',new THREE.BufferAttribute(v,3));
+  g.setAttribute('phase',new THREE.BufferAttribute(ph,1));
+  return new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader:`
+      attribute vec3 velocity; attribute float phase;
+      uniform float time, intensity, pulse;
+      varying float vA;
+      void main(){
+        vec3 pos=position+velocity*time*40.;
+        pos.y=mod(pos.y+2.,4.)-2.;
+        pos.x+=sin(time*.4+phase)*.25; pos.z+=cos(time*.4+phase*1.3)*.25;
+        vA=(.3+.7*sin(time+phase))*intensity*(1.+pulse*.4);
+        vec4 mv=modelViewMatrix*vec4(pos,1.);
+        gl_PointSize=(2.5+pulse*1.5)*intensity*(80./-mv.z);
+        gl_Position=projectionMatrix*mv;
+      }`,
+    fragmentShader:`
+      uniform vec3 auraCol;
+      uniform float blendAdd;
+      varying float vA;
+      void main(){
+        float d=length(gl_PointCoord-.5); if(d>.5)discard;
+        vec3 c=auraCol*(1.+blendAdd*.4);
+        gl_FragColor=vec4(c, smoothstep(.5,0.,d)*vA);
+      }`,
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  }));
+}
+
+/* ═══════════════════════════════════════════════════
+   LOTUS THRONE (emissive only — safe for additive)
+   ═══════════════════════════════════════════════════ */
+function mkLotus(){
+  const grp=new THREE.Group();
+  const sh=new THREE.Shape();
+  sh.moveTo(0,0); sh.quadraticCurveTo(.14,.28,0,.48); sh.quadraticCurveTo(-.14,.28,0,0);
+  const geo=new THREE.ExtrudeGeometry(sh,{depth:.015,bevelEnabled:true,bevelThickness:.008,bevelSize:.008,bevelSegments:2});
+  const mat=new THREE.ShaderMaterial({
+    uniforms:U,
+    vertexShader:`varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader:`
+      uniform float time,intensity,blendAdd; varying vec3 vP;
+      void main(){
+        float g=.25+.15*sin(time*1.2+vP.y*3.5);
+        vec3 c=vec3(.85,.35,.45)*(g+intensity*.25)*(1.+blendAdd*.3);
+        gl_FragColor=vec4(c,(.25+intensity*.45)*g);
+      }`,
+    transparent:true,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false
+  });
+  for(let ring=0;ring<2;ring++){
+    const n=14, r=ring?0.22:0.38, y=ring?-1.08:-1.18, tilt=ring?-Math.PI/5:-Math.PI/4, sc=ring?0.75:1.1;
+    for(let i=0;i<n;i++){
+      const a=i/n*6.283+(ring?Math.PI/n:0);
+      const p=new THREE.Mesh(geo,mat);
+      p.position.set(Math.cos(a)*r,y,Math.sin(a)*r);
+      p.rotation.set(tilt,a,0); p.scale.setScalar(sc);
+      grp.add(p);
+    }
+  }
+  // Moon disc
+  const dm=new THREE.ShaderMaterial({
+    uniforms:U,
+    vertexShader:`void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader:`
+      uniform float intensity,blendAdd;
+      void main(){
+        vec3 c=vec3(.55,.6,.85)*(1.+blendAdd*.3);
+        gl_FragColor=vec4(c*(.15+intensity*.35), .12+intensity*.3);
+      }`,
+    transparent:true,blending:THREE.AdditiveBlending,depthWrite:false
+  });
+  const disc=new THREE.Mesh(new THREE.CylinderGeometry(.48,.48,.025,24),dm);
+  disc.position.y=-1.03; grp.add(disc);
+  return grp;
+}
+
+/* ═══════════════════════════════════════════════════
+   SEED SYLLABLE (pulsing orb + rings)
+   ═══════════════════════════════════════════════════ */
+function mkSeed(){
+  const grp=new THREE.Group();
+  const mat=new THREE.ShaderMaterial({
+    uniforms:U,
+    vertexShader:`varying vec3 vN; void main(){ vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader:`
+      uniform float time,intensity,pulse,blendAdd; uniform vec3 auraCol; varying vec3 vN;
+      void main(){
+        float p=1.+sin(time*3.)*.2+pulse*.5;
+        float a=(.3+.7*intensity)*p*max(.25,1.-intensity*.55);
+        vec3 c=auraCol*p*2.*(1.+blendAdd*.4);
+        gl_FragColor=vec4(c,a);
+      }`,
+    transparent:true,blending:THREE.AdditiveBlending,depthWrite:false
+  });
+  grp.add(new THREE.Mesh(new THREE.SphereGeometry(.14,12,12),mat));
+  for(let i=0;i<3;i++){
+    const r=new THREE.Mesh(new THREE.TorusGeometry(.23+i*.09,.004,6,48),mat);
+    r.rotation.set(Math.PI/2+(i-1)*.3,0,i*.5);
+    grp.add(r);
+  }
+  return grp;
+}
+
+/* ═══════════════════════════════════════════════════
+   DEITY FIGURE (geometric light-body)
+   Reduced segment counts for perf.
+   ═══════════════════════════════════════════════════ */
+function mkFigure(){
+  const g=new THREE.Group();
+  const parts=[
+    {geo:new THREE.CylinderGeometry(.24,.34,.78,12),pos:[0,-.3,0]},
+    {geo:new THREE.SphereGeometry(.3,12,12),pos:[0,.05,0],sc:[1,.8,.7]},
+    {geo:new THREE.SphereGeometry(.19,12,12),pos:[0,.44,0]},
+    {geo:new THREE.ConeGeometry(.11,.18,6),pos:[0,.63,0]},
+    {geo:new THREE.CylinderGeometry(.055,.065,.55,6),pos:[-.33,-.1,0],rot:[0,0,.5]},
+    {geo:new THREE.CylinderGeometry(.055,.065,.55,6),pos:[.33,0,0],rot:[0,0,-.8]},
+    {geo:new THREE.CylinderGeometry(.012,.012,.65,4),pos:[.53,.34,0],rot:[0,0,-.3]},
+    {geo:new THREE.ConeGeometry(.035,.14,4),pos:[.58,.63,0],rot:[0,0,-.3]},
+    {geo:new THREE.CylinderGeometry(.09,.07,.45,6),pos:[-.14,-.78,.1],rot:[0,0,1.3]},
+    {geo:new THREE.CylinderGeometry(.09,.07,.45,6),pos:[.14,-.78,.1],rot:[0,0,-1.3]},
+  ];
+  parts.forEach(p=>{
+    const m=new THREE.Mesh(p.geo,bodyMat);
+    m.position.set(...p.pos);
+    if(p.rot)m.rotation.set(...p.rot);
+    if(p.sc)m.scale.set(...p.sc);
+    g.add(m);
+  });
+  // Halo
+  const hm=new THREE.ShaderMaterial({
+    uniforms:U,
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader:`
+      uniform float time,intensity,pulse,blendAdd; uniform vec3 col1; varying vec2 vUv;
+      void main(){
+        float ang=atan(vUv.y-.5,vUv.x-.5);
+        float p=sin(ang*8.+time*2.)*.5+.5;
+        p*=sin(ang*12.-time*1.5)*.5+.5;
+        float a=p*intensity*.45*(1.+pulse*.25);
+        vec3 c=col1*(1.4+p)*(1.+blendAdd*.4);
+        gl_FragColor=vec4(c,a);
+      }`,
+    transparent:true,side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending
+  });
+  const halo=new THREE.Mesh(new THREE.RingGeometry(.75,1.15,48),hm);
+  halo.position.set(0,.2,-.28); g.add(halo);
+  return g;
+}
+
+/* ═══════════════════════════════════════════════════
+   BACKGROUND STARS (screen mode only)
+   ═══════════════════════════════════════════════════ */
+const starGeo=new THREE.BufferGeometry();
+const SC=1200;
+const sP=new Float32Array(SC*3),sS=new Float32Array(SC);
+for(let i=0;i<SC;i++){
+  sP[i*3]=(Math.random()-.5)*80;sP[i*3+1]=(Math.random()-.5)*80;sP[i*3+2]=-Math.random()*40-5;
+  sS[i]=Math.random()*1.8;
+}
+starGeo.setAttribute('position',new THREE.BufferAttribute(sP,3));
+starGeo.setAttribute('size',new THREE.BufferAttribute(sS,1));
+const starMat=new THREE.ShaderMaterial({
+  uniforms:{time:U.time},
+  vertexShader:`
+    attribute float size; uniform float time; varying float vA;
+    void main(){ vA=.25+.6*sin(time*.4+position.x*8.);
+      vec4 mv=modelViewMatrix*vec4(position,1.);
+      gl_PointSize=size*(160./-mv.z); gl_Position=projectionMatrix*mv; }`,
+  fragmentShader:`
+    varying float vA;
+    void main(){ float d=length(gl_PointCoord-.5); if(d>.5)discard;
+      gl_FragColor=vec4(.7,.7,.9,smoothstep(.5,0.,d)*vA*.3); }`,
+  transparent:true,depthWrite:false
+});
+const stars=new THREE.Points(starGeo,starMat);
+scene.add(stars);
+
+/* ═══════════════════════════════════════════════════
+   AR RETICLE (for hit-test placement)
+   ═══════════════════════════════════════════════════ */
+const reticleMat=new THREE.ShaderMaterial({
+  uniforms:{time:U.time},
+  vertexShader:`void main(){ gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader:`
+    uniform float time;
+    void main(){
+      float a=.25+.15*sin(time*3.);
+      gl_FragColor=vec4(1.,1.,1.,a);
+    }`,
+  transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide,
+});
+const reticleMesh=new THREE.Mesh(new THREE.RingGeometry(.08,.1,24).rotateX(-Math.PI/2),reticleMat);
+reticleMesh.visible=false;
+scene.add(reticleMesh);
+
+/* ═══════════════════════════════════════════════════
+   SCENE ASSEMBLY
+   ═══════════════════════════════════════════════════ */
+const root=new THREE.Group();  // deity root — repositioned for AR
+scene.add(root);
+
+const lotus  =mkLotus();    root.add(lotus);
+const seed   =mkSeed();     seed.position.y=.2; root.add(seed);
+const figure =mkFigure();   figure.position.y=.2; root.add(figure);
+const auraIn =new THREE.Mesh(new THREE.SphereGeometry(1.15,24,24),mkAuraMat());
+const auraOut=new THREE.Mesh(new THREE.SphereGeometry(1.9,24,24),mkAuraMat());
+root.add(auraIn); root.add(auraOut);
+const partR=mkPart(200,1.4,new THREE.Color(...D.manjushri.aura));
+const partS=mkPart(120,2.2,new THREE.Color(...D.manjushri.color));
+root.add(partR); root.add(partS);
+
+scene.add(new THREE.AmbientLight(0x111122,.2));
+const dLight=new THREE.PointLight(0xffd896,0,8);
+dLight.position.set(0,1,2);
+scene.add(dLight);
+
+/* ═══════════════════════════════════════════════════
+   CHANT LOGIC
+   ═══════════════════════════════════════════════════ */
+let dbgTriggers=0, dbgVoiceTriggers=0;
+
+function chant(fromVoice){
+  const now=Date.now();
+  if(now-S.lastChant<1100) return;
+  S.lastChant=now;
+  S.reps++;
+  S.target=Math.min(1,S.reps/TARGET_REPS);
+  S.pulseT=1;
+  dbgTriggers++;
+  if(fromVoice) dbgVoiceTriggers++;
+  document.getElementById('rep-num').textContent=S.reps;
+  document.getElementById('bar-fill').style.width=(S.target*100)+'%';
+  const m=document.getElementById('mantra');
+  m.classList.add('pulse'); setTimeout(()=>m.classList.remove('pulse'),450);
+  if(S.target>=.95) document.getElementById('merge-btn').style.display='block';
+  updStage();
+  // Update debug counters
+  const te=document.getElementById('adbg-triggers');
+  const ve=document.getElementById('adbg-vtriggers');
+  if(te)te.textContent=dbgTriggers;
+  if(ve)ve.textContent=dbgVoiceTriggers;
+}
+
+// Force-set reps (for debug buttons)
+function setReps(n){
+  S.reps=Math.max(0,Math.min(n,999));
+  S.target=Math.min(1,S.reps/TARGET_REPS);
+  S.pulseT=1;
+  document.getElementById('rep-num').textContent=S.reps;
+  document.getElementById('bar-fill').style.width=(S.target*100)+'%';
+  if(S.target>=.95) document.getElementById('merge-btn').style.display='block';
+  else document.getElementById('merge-btn').style.display='none';
+  updStage();
+}
+
+function updStage(){
+  const d=D[S.deity]; let c=d.stages[0];
+  for(const s of d.stages) if(S.intensity>=s.t) c=s;
+  document.getElementById('stage-n').textContent=c.n;
+  document.getElementById('stage-d').textContent=c.d;
+}
+
+/* ═══════════════════════════════════════════════════
+   AUDIO / MIC
+   ═══════════════════════════════════════════════════ */
+const avE=document.getElementById('aud-vis');
+for(let i=0;i<28;i++){const b=document.createElement('div');b.className='abar';b.style.height='2px';avE.appendChild(b);}
+
+/*
+ * ═══════════════════════════════════════════════════════════════════
+ * DETECTION ENGINE — 5 PARALLEL MODES
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ * ANALYSIS: Which approach is most robust for mantra repetition counting?
+ *
+ * A full mantra ("Om Ah Ra Pa Tsa Na Dhih") takes ~3-4s. Between
+ * repetitions there is a natural pause of ~0.3-1s. The ideal detector
+ * identifies each NEW mantra onset (the silence→voice transition),
+ * not individual syllables.
+ *
+ * 1. NAIVE (avg energy > threshold, 700ms hold)
+ *    Simple but terrible: conflates all frequencies, triggers on HVAC
+ *    or typing, and the 700ms hold means it fires mid-mantra rather
+ *    than at the start. Can't count fast chanting at all — the energy
+ *    never drops below threshold between rapid repetitions.
+ *
+ * 2. ONSET (spectral flux)
+ *    Detects sharp energy increases by comparing successive FFT frames.
+ *    Great for percussive attacks but fires on every syllable boundary,
+ *    not just mantra boundaries. Needs a long cooldown (~2.5s) to
+ *    approximate one-per-mantra, which makes it effectively a timer
+ *    gated by any loud enough syllable onset. Moderate accuracy.
+ *
+ * 3. BAND-WEIGHTED + PERIODICITY
+ *    Weights voice-range (100-2000Hz) bins, ignores high frequencies.
+ *    Tracks a short-term energy envelope and detects periodic peaks
+ *    using autocorrelation. Once locked onto a chanting rhythm it's
+ *    very accurate, but needs 2-3 cycles to lock on, and falls apart
+ *    if the practitioner's rhythm is irregular. Good for steady fast
+ *    chanting, poor for variable pace.
+ *
+ * 4. SPECTRAL CENTROID + VOICED/UNVOICED (RECOMMENDED DEFAULT)
+ *    Computes where spectral energy is concentrated. Human voice
+ *    clusters centroid at ~500-3000Hz. Tracks voiced→silent→voiced
+ *    transitions. The silence GAP between mantras is the most
+ *    reliable signal: it exists even in fast chanting (you must
+ *    breathe), and ambient noise rarely produces clean voice→silence
+ *    →voice patterns. This mode adapts its silence threshold to the
+ *    running noise floor. Most robust across varied environments,
+ *    paces, and voices.
+ *
+ * 5. ZCR + ENERGY
+ *    Fast and cheap. Voiced speech = low ZCR + high energy. Detects
+ *    transitions into voiced regions. Similar to Spectral but less
+ *    discriminating — can false-trigger on low-frequency rumble which
+ *    also has low ZCR. Good as a secondary confirmation signal.
+ *
+ * VERDICT: Mode 4 (Spectral) is set as the default because it's the
+ * only approach that directly detects the inter-mantra silence gap,
+ * which is the most reliable acoustic signature of "one complete
+ * repetition." It works at any chanting speed, adapts to ambient
+ * noise, and doesn't require rhythmic consistency.
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+let adbgOpen=false;
+let specCtx=null, waveCtx=null;
+let detMode='spectral'; // default: spectral centroid
+
+const MODE_DESCS = {
+  naive:    'Avg energy > fixed threshold (0.12) held 700ms. No frequency discrimination.',
+  onset:    'Spectral flux: detects sharp energy increases between FFT frames. 2.5s cooldown.',
+  band:     'Voice-band (100-2000Hz) weighted energy with autocorrelation periodicity detection.',
+  spectral: 'Spectral centroid voiced/unvoiced detection. Fires on silence→voice transitions. [DEFAULT]',
+  zcr:      'Zero-crossing rate + energy. Low ZCR + high energy = voiced onset.',
+};
+
+// ---- Detection state per mode ----
+const det = {
+  // Shared
+  prevFreq: null,
+  frameCount: 0,
+  lastTrigger: {naive:0, onset:0, band:0, spectral:0, zcr:0},
+  confidence: {naive:0, onset:0, band:0, spectral:0, zcr:0},
+  fired: {naive:false, onset:false, band:false, spectral:false, zcr:false},
+
+  // Naive
+  naiveOn: false,
+  naiveTimer: null,
+
+  // Onset
+  fluxHistory: [],    // last N flux values for adaptive threshold
+  fluxSmooth: 0,
+
+  // Band+Periodicity
+  bandEnvelope: [],   // voice-band energy history (~3s window)
+  bandPeriod: 0,      // detected period in frames
+  bandLastPeak: 0,    // frame of last detected peak
+
+  // Spectral centroid
+  centroidHistory: [], // last N centroid values
+  voicedNow: false,
+  wasVoiced: false,
+  silenceStart: 0,    // frame when silence began
+  noiseFloor: 0.05,   // adaptive noise floor for voice energy
+  voiceEnergy: 0,
+
+  // ZCR
+  zcrSmooth: 0,
+  zcrEnergySmooth: 0,
+  zcrVoiced: false,
+  zcrWasVoiced: false,
+  zcrSilenceStart: 0,
+};
+
+function detLog(mode, conf){
+  const el=document.getElementById('det-log');
+  if(!el) return;
+  const now=new Date();
+  const ts=now.toTimeString().slice(0,8)+'.'+String(now.getMilliseconds()).padStart(3,'0');
+  const entry=document.createElement('div');
+  entry.className='log-entry';
+  entry.innerHTML=`<span class="log-time">${ts}</span> <span class="log-mode">${mode.toUpperCase()}</span> conf=<span class="log-conf">${conf.toFixed(2)}</span>`;
+  el.prepend(entry);
+  // Keep last 20
+  while(el.children.length>20) el.removeChild(el.lastChild);
+  // Update last mode display
+  const lm=document.getElementById('adbg-lastmode');
+  if(lm) lm.textContent=mode;
+}
+
+function detFire(mode, conf){
+  det.fired[mode]=true;
+  detLog(mode, conf);
+  // Only trigger chant if this is the active mode
+  if(mode===detMode){
+    chant(true);
+  }
+}
+
+// ---- NAIVE: avg energy > 0.12 for 700ms ----
+function runNaive(avg){
+  det.confidence.naive=Math.min(1, avg/0.2);
+  if(avg>0.12){
+    if(!det.naiveOn){
+      det.naiveOn=true;
+      det.naiveTimer=setTimeout(()=>{
+        if(det.naiveOn){
+          const now=Date.now();
+          if(now-det.lastTrigger.naive>1100){
+            det.lastTrigger.naive=now;
+            detFire('naive', det.confidence.naive);
+          }
+        }
+      },700);
+    }
+  }else{
+    det.naiveOn=false;
+    if(det.naiveTimer){clearTimeout(det.naiveTimer);det.naiveTimer=null;}
+  }
+}
+
+// ---- ONSET: spectral flux ----
+function runOnset(freqData, binCount){
+  if(!det.prevFreq){det.prevFreq=new Uint8Array(freqData);return;}
+
+  // Compute spectral flux: sum of positive differences
+  let flux=0;
+  for(let i=0;i<binCount;i++){
+    const diff=freqData[i]-det.prevFreq[i];
+    if(diff>0) flux+=diff;
+  }
+  flux/=(binCount*255); // normalize 0-1
+
+  // Keep history for adaptive threshold
+  det.fluxHistory.push(flux);
+  if(det.fluxHistory.length>60) det.fluxHistory.shift(); // ~1s at 60fps
+
+  // Adaptive threshold: mean + 1.5 * stddev
+  let mean=0;
+  for(const f of det.fluxHistory) mean+=f;
+  mean/=det.fluxHistory.length;
+  let stddev=0;
+  for(const f of det.fluxHistory) stddev+=(f-mean)*(f-mean);
+  stddev=Math.sqrt(stddev/det.fluxHistory.length);
+
+  const threshold=mean+1.5*stddev+0.02; // +0.02 minimum floor
+  const score=threshold>0 ? flux/threshold : 0;
+  det.confidence.onset=Math.min(1, score);
+
+  // Fire if flux exceeds threshold, with 2.5s cooldown (one per mantra)
+  const now=Date.now();
+  if(flux>threshold && flux>0.04 && now-det.lastTrigger.onset>2500){
+    det.lastTrigger.onset=now;
+    detFire('onset', det.confidence.onset);
+  }
+
+  det.prevFreq.set(freqData);
+}
+
+// ---- BAND-WEIGHTED + PERIODICITY ----
+function runBand(freqData, binCount, sr, fftSize){
+  const freqRes=sr/fftSize;
+  // Compute voice-band energy (100-2000Hz), with weight falloff
+  let voiceE=0, totalW=0;
+  for(let i=0;i<binCount;i++){
+    const f=i*freqRes;
+    let w=0;
+    if(f>=80 && f<=2500){
+      // Peak weight at 200-1200Hz
+      if(f>=200 && f<=1200) w=1.0;
+      else if(f<200) w=(f-80)/120;
+      else w=(2500-f)/1300;
+    }
+    voiceE+=w*(freqData[i]/255);
+    totalW+=w;
+  }
+  voiceE = totalW>0 ? voiceE/totalW : 0;
+
+  // Track envelope (~180 frames = 3s at 60fps)
+  det.bandEnvelope.push(voiceE);
+  if(det.bandEnvelope.length>180) det.bandEnvelope.shift();
+
+  // Simple peak detection in envelope
+  const env=det.bandEnvelope;
+  const len=env.length;
+  det.confidence.band=Math.min(1, voiceE*2);
+
+  if(len<30) return; // need at least 0.5s of data
+
+  // Detect if current frame is a peak (local max within +-8 frames)
+  const lookback=8;
+  const idx=len-1-lookback;
+  if(idx<lookback) return;
+
+  let isPeak=true;
+  const peakVal=env[idx];
+  if(peakVal<0.15) isPeak=false; // minimum energy for a peak
+  for(let j=idx-lookback;j<=idx+lookback;j++){
+    if(j!==idx && env[j]>=peakVal){isPeak=false;break;}
+  }
+
+  if(isPeak){
+    const now=Date.now();
+    // Minimum 1.8s between peaks (allows fast chanting ~3s/mantra)
+    if(now-det.lastTrigger.band>1800){
+      det.lastTrigger.band=now;
+      det.confidence.band=Math.min(1, peakVal*3);
+      detFire('band', det.confidence.band);
+    }
+  }
+}
+
+// ---- SPECTRAL CENTROID + VOICED/UNVOICED ----
+function runSpectral(freqData, binCount, sr, fftSize){
+  const freqRes=sr/fftSize;
+
+  // Spectral centroid: weighted mean of frequencies
+  let weightedSum=0, totalMag=0;
+  for(let i=1;i<binCount;i++){
+    const mag=freqData[i]/255;
+    const freq=i*freqRes;
+    weightedSum+=freq*mag;
+    totalMag+=mag;
+  }
+  const centroid=totalMag>0.01 ? weightedSum/totalMag : 0;
+
+  // Voice-band energy (100-3000Hz)
+  let vEnergy=0, vBins=0;
+  for(let i=0;i<binCount;i++){
+    const f=i*freqRes;
+    if(f>=100 && f<=3000){
+      vEnergy+=freqData[i]/255;
+      vBins++;
+    }
+  }
+  vEnergy = vBins>0 ? vEnergy/vBins : 0;
+
+  // Adaptive noise floor (slow-adapting minimum)
+  det.noiseFloor = det.noiseFloor*0.998 + vEnergy*0.002;
+  if(vEnergy < det.noiseFloor) det.noiseFloor=vEnergy;
+
+  // Voiced = centroid in voice range AND energy significantly above noise floor
+  const voiceThresh=det.noiseFloor+0.06;
+  const isVoiced = centroid>300 && centroid<4000 && vEnergy>voiceThresh;
+  det.voiceEnergy=vEnergy;
+
+  det.centroidHistory.push(centroid);
+  if(det.centroidHistory.length>120) det.centroidHistory.shift();
+
+  det.wasVoiced=det.voicedNow;
+  det.voicedNow=isVoiced;
+
+  // Confidence: how "voice-like" is the signal
+  let centConf=0;
+  if(centroid>300 && centroid<4000){
+    // Peak confidence at 800-2000Hz
+    if(centroid>=800 && centroid<=2000) centConf=1;
+    else if(centroid<800) centConf=(centroid-300)/500;
+    else centConf=(4000-centroid)/2000;
+  }
+  const eConf=Math.min(1,Math.max(0,(vEnergy-det.noiseFloor)/0.15));
+  det.confidence.spectral=centConf*0.4+eConf*0.6;
+
+  // Detect silence→voice transition (mantra start)
+  if(!isVoiced && det.wasVoiced){
+    det.silenceStart=det.frameCount;
+  }
+
+  if(isVoiced && !det.wasVoiced){
+    // Transition from silence to voice
+    const silenceDuration=(det.frameCount-det.silenceStart)/60; // seconds
+    const now=Date.now();
+    // Require at least 150ms of silence (natural inter-mantra gap)
+    // and minimum 1.5s since last trigger
+    if(silenceDuration>0.15 && now-det.lastTrigger.spectral>1500){
+      det.lastTrigger.spectral=now;
+      detFire('spectral', det.confidence.spectral);
+    }
+  }
+}
+
+// ---- ZCR + ENERGY ----
+function runZCR(timeData, freqData, binCount, sr, fftSize){
+  const freqRes=sr/fftSize;
+
+  // Zero crossing rate from time-domain data
+  let crossings=0;
+  for(let i=1;i<timeData.length;i++){
+    if((timeData[i-1]<128 && timeData[i]>=128)||(timeData[i-1]>=128 && timeData[i]<128)){
+      crossings++;
+    }
+  }
+  const zcr=crossings/timeData.length; // 0-1
+
+  // Voice-band energy
+  let energy=0, eBins=0;
+  for(let i=0;i<binCount;i++){
+    const f=i*freqRes;
+    if(f>=80 && f<=2500){
+      energy+=freqData[i]/255;
+      eBins++;
+    }
+  }
+  energy = eBins>0 ? energy/eBins : 0;
+
+  // Smooth both signals
+  det.zcrSmooth=det.zcrSmooth*0.85+zcr*0.15;
+  det.zcrEnergySmooth=det.zcrEnergySmooth*0.85+energy*0.15;
+
+  // Voiced = low ZCR (<0.15) + high energy
+  // Unvoiced speech has ZCR > 0.3. Silence has low energy.
+  const isVoiced = det.zcrSmooth<0.15 && det.zcrEnergySmooth>0.08;
+  det.confidence.zcr = Math.min(1, (isVoiced ? 1 : 0) * det.zcrEnergySmooth * 5);
+
+  det.zcrWasVoiced=det.zcrVoiced;
+  det.zcrVoiced=isVoiced;
+
+  if(!isVoiced && det.zcrWasVoiced){
+    det.zcrSilenceStart=det.frameCount;
+  }
+
+  if(isVoiced && !det.zcrWasVoiced){
+    const silDur=(det.frameCount-det.zcrSilenceStart)/60;
+    const now=Date.now();
+    if(silDur>0.12 && now-det.lastTrigger.zcr>1500){
+      det.lastTrigger.zcr=now;
+      detFire('zcr', det.confidence.zcr);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// MAIN AUDIO TICK — runs all modes, renders debug
+// ═══════════════════════════════════════════════════
+function tickAudio(){
+  if(!S.analyser) return;
+
+  const binCount=S.analyser.frequencyBinCount;
+  const freqData=new Uint8Array(binCount);
+  const timeData=new Uint8Array(binCount);
+  S.analyser.getByteFrequencyData(freqData);
+  S.analyser.getByteTimeDomainData(timeData);
+  const sr=S.audioCtx?S.audioCtx.sampleRate:48000;
+  const fftSize=S.analyser.fftSize;
+  const freqRes=sr/fftSize;
+  det.frameCount++;
+
+  // Reset per-frame fire flags
+  det.fired={naive:false,onset:false,band:false,spectral:false,zcr:false};
+
+  // Mini visualizer bars (existing UI)
+  const bars=avE.querySelectorAll('.abar');
+  let tot=0;
+  for(let i=0;i<bars.length;i++){
+    const v=freqData[Math.floor(i*binCount/bars.length)]/255;
+    bars[i].style.height=Math.max(2,v*22)+'px';
+    tot+=v;
+  }
+  const avg=tot/bars.length;
+
+  // Run ALL detection modes in parallel (for confidence comparison)
+  runNaive(avg);
+  runOnset(freqData, binCount);
+  runBand(freqData, binCount, sr, fftSize);
+  runSpectral(freqData, binCount, sr, fftSize);
+  runZCR(timeData, freqData, binCount, sr, fftSize);
+
+  // Update voiceOn for UI (based on active mode)
+  S.voiceOn = (detMode==='naive' && det.naiveOn)
+           || (detMode==='spectral' && det.voicedNow)
+           || (detMode==='zcr' && det.zcrVoiced)
+           || (detMode==='onset' && det.confidence.onset>0.8)
+           || (detMode==='band' && det.confidence.band>0.4);
+
+  // ---- Debug Panel Rendering ----
+  if(!adbgOpen) return;
+
+  // RMS & Peak
+  let rms=0, peak=0;
+  for(let i=0;i<binCount;i++){
+    const v=freqData[i]/255;
+    rms+=v*v;
+    if(v>peak)peak=v;
+  }
+  rms=Math.sqrt(rms/binCount);
+
+  // Peak frequency
+  let peakBin=0, peakVal=0;
+  for(let i=1;i<binCount;i++){
+    if(freqData[i]>peakVal){peakVal=freqData[i];peakBin=i;}
+  }
+  const peakFreq=peakBin*freqRes;
+
+  // Frequency bands
+  const bandLimits=[200,500,2000,6000,sr/2];
+  const bandSums=[0,0,0,0,0], bandCounts=[0,0,0,0,0];
+  for(let i=0;i<binCount;i++){
+    const f=i*freqRes;
+    let b=4;
+    for(let j=0;j<5;j++){if(f<bandLimits[j]){b=j;break;}}
+    bandSums[b]+=freqData[i]/255;
+    bandCounts[b]++;
+  }
+
+  // Update DOM
+  const $=id=>document.getElementById(id);
+  $('adbg-rms').textContent=rms.toFixed(3);
+  $('adbg-peak').textContent=peak.toFixed(3);
+  $('adbg-avg').textContent=avg.toFixed(3);
+  $('adbg-peakfreq').textContent=peakFreq.toFixed(0)+' Hz';
+  $('adbg-fft').textContent=fftSize;
+  $('adbg-bins').textContent=binCount;
+  $('adbg-res').textContent=freqRes.toFixed(1);
+  $('adbg-sr').textContent=(sr/2).toFixed(0)+' Hz';
+
+  const micE=$('adbg-mic');
+  micE.textContent=S.listening?'ACTIVE':'OFF';
+  micE.className='adbg-val '+(S.listening?'grn':'red');
+
+  const ds=$('detect-status');
+  ds.textContent=S.voiceOn?'SPEECH DETECTED':'NO SPEECH';
+  ds.className=S.voiceOn?'yes':'no';
+
+  // Volume meter
+  const vf=$('vol-meter-fill');
+  const pct=Math.min(100,rms*200);
+  vf.style.width=pct+'%';
+  vf.className=pct<30?'vol-lo':pct<70?'vol-mid':'vol-hi';
+
+  // Frequency bands
+  const bandIds=['fb-sub','fb-low','fb-mid','fb-himid','fb-high'];
+  for(let i=0;i<5;i++){
+    const bv=bandCounts[i]?bandSums[i]/bandCounts[i]:0;
+    $(bandIds[i]).textContent=(bv*100).toFixed(0);
+    $(bandIds[i]).style.color=bv>.3?'#6f6':bv>.1?'#cc6':'#866';
+  }
+
+  // Confidence bars (all modes)
+  const modes=['naive','onset','band','spectral','zcr'];
+  for(const m of modes){
+    const c=det.confidence[m];
+    const bar=$('cb-'+m);
+    const val=$('cv-'+m);
+    if(bar){
+      bar.style.width=(c*100)+'%';
+      bar.style.background=c>0.8?'#4a4':c>0.4?'#884':'#844';
+      if(det.fired[m]) bar.parentElement.classList.add('conf-fire');
+      else bar.parentElement.classList.remove('conf-fire');
+    }
+    if(val) val.textContent=(c*100).toFixed(0);
+  }
+
+  // Spectrum canvas
+  if(!specCtx){specCtx=$('spectrum-canvas').getContext('2d');}
+  {
+    const c=specCtx, w=296, h=80;
+    c.clearRect(0,0,w,h);
+    const barW=w/binCount;
+    for(let i=0;i<binCount;i++){
+      const v=freqData[i]/255;
+      const bh=v*h;
+      const r=v>0.5?255:Math.floor(v*2*255);
+      const g=v<0.5?255:Math.floor((1-v)*2*255);
+      c.fillStyle=`rgb(${r},${g},40)`;
+      c.fillRect(i*barW, h-bh, Math.max(1,barW-.5), bh);
+    }
+    const px=peakBin*barW;
+    c.strokeStyle='rgba(255,255,0,.6)';
+    c.lineWidth=1;
+    c.beginPath();c.moveTo(px,0);c.lineTo(px,h);c.stroke();
+    // Voice band highlight (100-3000Hz)
+    const vLo=Math.floor(100/freqRes)*barW;
+    const vHi=Math.floor(3000/freqRes)*barW;
+    c.fillStyle='rgba(0,150,255,.08)';
+    c.fillRect(vLo,0,vHi-vLo,h);
+  }
+
+  // Waveform canvas
+  if(!waveCtx){waveCtx=$('waveform-canvas').getContext('2d');}
+  {
+    const c=waveCtx, w=296, h=50;
+    c.clearRect(0,0,w,h);
+    c.strokeStyle=S.voiceOn?'#6f6':'#4a4';
+    c.lineWidth=1.5;
+    c.beginPath();
+    for(let i=0;i<timeData.length;i++){
+      const v=timeData[i]/255;
+      const x=i*w/timeData.length;
+      const y=v*h;
+      if(i===0)c.moveTo(x,y);else c.lineTo(x,y);
+    }
+    c.stroke();
+    c.strokeStyle='rgba(100,100,100,.3)';
+    c.lineWidth=1;
+    c.beginPath();c.moveTo(0,h/2);c.lineTo(w,h/2);c.stroke();
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   WEBXR AR — XREAL-OPTIMISED ENTRY
+   ═══════════════════════════════════════════════════ */
+let xrSupported=false;
+if(navigator.xr){
+  navigator.xr.isSessionSupported('immersive-ar').then(ok=>{
+    xrSupported=ok;
+    document.getElementById('ar-stat').textContent=ok
+      ? 'WebXR AR available — optimised for XREAL'
+      : 'WebXR AR not detected — gyro fallback available';
+  }).catch(()=>{});
+}
+
+async function enterXR(){
+  if(!navigator.xr) return false;
+  try{
+    // Request session with features useful on XREAL
+    const feats=['local-floor'];
+    const optFeats=['hit-test','dom-overlay','light-estimation'];
+    const opts={requiredFeatures:feats, optionalFeatures:optFeats};
+    // DOM overlay keeps our UI visible in AR
+    opts.domOverlay={root:document.getElementById('ui')};
+
+    const session=await navigator.xr.requestSession('immersive-ar',opts);
+    S.xrSession=session;
+
+    // Detect blend mode — critical for XREAL
+    S.blendMode=session.environmentBlendMode||'additive';
+    console.log('XR blend mode:',S.blendMode);
+
+    // For additive displays (XREAL see-through): flag shaders
+    U.blendAdd.value = (S.blendMode==='additive') ? 1.0 : 0.0;
+
+    renderer.xr.enabled=true;
+    renderer.xr.setReferenceSpaceType('local-floor');
+    await renderer.xr.setSession(session);
+
+    S.xrRefSpace=await session.requestReferenceSpace('local-floor');
+
+    // Hit-test source (viewer ray)
+    try{
+      const viewerSpace=await session.requestReferenceSpace('viewer');
+      S.xrHitSrc=await session.requestHitTestSource({space:viewerSpace});
+    }catch(e){
+      console.log('Hit-test not available, using fixed placement');
+    }
+
+    // Controller — tap to place
+    const ctrl=renderer.xr.getController(0);
+    ctrl.addEventListener('select', onXRSelect);
+    scene.add(ctrl);
+
+    session.addEventListener('end',()=>{
+      S.xrSession=null;
+      renderer.xr.enabled=false;
+      leaveAR();
+    });
+
+    return true;
+  }catch(e){
+    console.warn('WebXR AR entry failed:',e);
+    return false;
+  }
+}
+
+function onXRSelect(){
+  if(!S.placed){
+    // Place deity at reticle or at fixed distance
+    if(reticleMesh.visible){
+      root.position.copy(reticleMesh.position);
+      root.quaternion.copy(reticleMesh.quaternion);
+    }
+    S.placed=true;
+    reticleMesh.visible=false;
+    document.getElementById('reticle-hint').style.display='none';
+    root.visible=true;
+  } else {
+    chant(false);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   GYRO FALLBACK (for XREAL without WebXR, e.g.
+   Nebula spatial browser, or phone tethered)
+   ═══════════════════════════════════════════════════ */
+let gyroQ = new THREE.Quaternion();
+let gyroEnabled=false;
+
+function enableGyro(){
+  if(gyroEnabled) return Promise.resolve(true);
+  const go=()=>{
+    gyroEnabled=true;
+    window.addEventListener('deviceorientation',e=>{
+      const a=THREE.MathUtils.degToRad(e.alpha||0);
+      const b=THREE.MathUtils.degToRad((e.beta||0)-90);
+      const g=THREE.MathUtils.degToRad(e.gamma||0);
+      // YXZ euler to quaternion
+      const euler=new THREE.Euler(b,a,-g,'YXZ');
+      gyroQ.setFromEuler(euler);
+    },true);
+  };
+  if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+    return DeviceOrientationEvent.requestPermission().then(r=>{if(r==='granted')go();return r==='granted';}).catch(()=>false);
+  }
+  go(); return Promise.resolve(true);
+}
+
+/* ═══════════════════════════════════════════════════
+   AR MODE MANAGEMENT
+   ═══════════════════════════════════════════════════ */
+function enterAR(){
+  S.arActive=true;
+  document.body.classList.add('ar');
+  stars.visible=false;
+
+  // Position deity for AR
+  root.position.set(0, DEITY_HEIGHT, -DEITY_DISTANCE);
+  root.scale.setScalar(DEITY_SCALE_AR);
+
+  if(!S.placed && S.xrHitSrc){
+    // Show placement reticle
+    root.visible=false;
+    document.getElementById('reticle-hint').style.display='block';
+  } else {
+    root.visible=true;
+    S.placed=true;
+  }
+}
+
+function leaveAR(){
+  S.arActive=false;
+  S.placed=false;
+  document.body.classList.remove('ar');
+  stars.visible=true;
+  root.position.set(0,0,0);
+  root.scale.setScalar(1);
+  root.visible=true;
+  reticleMesh.visible=false;
+  document.getElementById('reticle-hint').style.display='none';
+  camera.position.set(0,.5,5);
+  camera.rotation.set(0,0,0);
+  U.blendAdd.value=0;
+}
+
+/* ═══════════════════════════════════════════════════
+   COLOUR SWITCHING
+   ═══════════════════════════════════════════════════ */
+function setColors(){
+  const d=D[S.deity];
+  U.col1.value.set(...d.color);
+  U.col2.value.set(...d.color2);
+  U.auraCol.value.set(...d.aura);
+  dLight.color.set(...d.aura);
+  document.getElementById('mantra').textContent=d.mantra;
+  document.getElementById('info-n').textContent=d.name;
+  document.getElementById('info-t').textContent=d.info;
+}
+
+/* ═══════════════════════════════════════════════════
+   MAIN TICK
+   ═══════════════════════════════════════════════════ */
+const clk=new THREE.Clock();
+
+function tick(timestamp, frame){
+  const t=clk.getElapsedTime();
+
+  // Smooth intensity
+  S.intensity+=(S.target-S.intensity)*.018;
+  S.pulse+=(S.pulseT-S.pulse)*.1;
+  S.pulseT*=.94;
+
+  // Merge
+  if(S.merging){
+    S.mergeT=Math.min(1,S.mergeT+.004);
+    if(S.mergeT>=1){S.merging=false;}
+  }
+
+  // Write uniforms (single source of truth)
+  U.time.value=t;
+  U.intensity.value=S.intensity;
+  U.pulse.value=S.pulse;
+  U.mergeT.value=S.mergeT;
+
+  dLight.intensity=S.intensity*2.5;
+  lotus.rotation.y=t*.08;
+
+  const ss=1+Math.sin(t*2)*.1+S.pulse*.28;
+  const sf=Math.max(.2,1-S.intensity*.5);
+  seed.scale.setScalar(ss*sf);
+  seed.rotation.y=t*.45;
+  figure.visible=S.intensity>.04;
+  partS.rotation.y=t*.15;
+
+  // WebXR AR: hit-test reticle
+  if(frame&&S.xrHitSrc&&!S.placed){
+    const results=frame.getHitTestResults(S.xrHitSrc);
+    if(results.length){
+      const pose=results[0].getPose(S.xrRefSpace);
+      if(pose){
+        reticleMesh.visible=true;
+        reticleMesh.matrix.fromArray(pose.transform.matrix);
+        reticleMesh.matrix.decompose(reticleMesh.position,reticleMesh.quaternion,reticleMesh.scale);
+      }
+    } else {
+      reticleMesh.visible=false;
+    }
+  }
+
+  // Gyro camera (non-WebXR AR)
+  if(S.arActive && !S.xrSession && gyroEnabled){
+    camera.quaternion.copy(gyroQ);
+  }
+  // Screen mode camera sway
+  if(!S.arActive && !S.xrSession){
+    camera.position.x=Math.sin(t*.13)*.25;
+    camera.position.y=.5+Math.sin(t*.09)*.08;
+    camera.position.z=5;
+    camera.lookAt(0,.2,0);
+  }
+
+  if(S.listening) tickAudio();
+
+  // Render
+  if(S.xrSession){
+    renderer.render(scene,camera);  // XR session drives the loop
+  } else if(S.arActive){
+    renderer.render(scene,camera);  // AR: skip post-processing (keeps black=transparent)
+  } else {
+    bloom.strength=.8+S.intensity*1.5+S.pulse*.4;
+    composer.render();              // Screen mode: bloom + vignette
+  }
+}
+
+// Start loops
+function animateScreen(){ requestAnimationFrame(animateScreen); if(!S.xrSession) tick(null,null); }
+renderer.setAnimationLoop((ts,frame)=>{ if(S.xrSession) tick(ts,frame); });
+animateScreen();
+
+/* ═══════════════════════════════════════════════════
+   PUBLIC API (onclick handlers)
+   ═══════════════════════════════════════════════════ */
+window.startApp = async function(ar){
+  document.getElementById('intro').classList.add('off');
+  setTimeout(()=>document.getElementById('intro').style.display='none',700);
+
+  if(ar){
+    let ok=false;
+    if(xrSupported) ok=await enterXR();
+    if(!ok){
+      // Gyro fallback for XREAL via Nebula / non-WebXR path
+      const gOk=await enableGyro();
+      if(gOk){
+        U.blendAdd.value=1; // assume additive display (XREAL OLED)
+        camera.position.set(0,EYE_HEIGHT,0);
+      }
+    }
+    enterAR();
+  }
+};
+
+window.pickDeity = function(d){
+  S.deity=d; S.reps=0; S.target=0; S.intensity=0; S.mergeT=0; S.merging=false;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.d===d));
+  document.getElementById('rep-num').textContent='0';
+  document.getElementById('bar-fill').style.width='0%';
+  document.getElementById('merge-btn').style.display='none';
+  setColors(); updStage();
+};
+
+window.doChant = ()=>chant(false);
+
+// Debug functions
+window.dbgAdd = function(n){
+  setReps(S.reps+n);
+};
+window.dbgSwap = function(){
+  const next=S.deity==='manjushri'?'guru-rinpoche':'manjushri';
+  pickDeity(next);
+};
+window.dbgToggleAudio = function(){
+  adbgOpen=!adbgOpen;
+  document.getElementById('audio-dbg').classList.toggle('open',adbgOpen);
+};
+window.setDetMode = function(m){
+  detMode=m;
+  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));
+  const desc=document.getElementById('mode-desc');
+  if(desc) desc.textContent=MODE_DESCS[m]||'';
+};
+
+window.toggleMic = async function(){
+  const btn=document.getElementById('mic-btn');
+  if(S.listening){
+    S.listening=false;btn.classList.remove('on');avE.classList.remove('on');
+    if(S.stream){S.stream.getTracks().forEach(t=>t.stop());S.stream=null;}
+    return;
+  }
+  try{
+    S.audioCtx=S.audioCtx||new AudioContext();
+    if(S.audioCtx.state==='suspended') await S.audioCtx.resume();
+    S.stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const src=S.audioCtx.createMediaStreamSource(S.stream);
+    S.analyser=S.audioCtx.createAnalyser();
+    S.analyser.fftSize=1024;  // 512 bins — better freq resolution for centroid/band modes
+    S.analyser.smoothingTimeConstant=.75;
+    src.connect(S.analyser);
+    S.listening=true;btn.classList.add('on');avE.classList.add('on');
+  }catch(e){
+    console.error('Mic denied:',e);
+    alert('Microphone access is needed for voice chanting detection.');
+  }
+};
+
+window.doReset = function(){
+  S.reps=0;S.target=0;S.mergeT=0;S.merging=false;
+  document.getElementById('rep-num').textContent='0';
+  document.getElementById('bar-fill').style.width='0%';
+  document.getElementById('merge-btn').style.display='none';
+  updStage();
+};
+
+window.doMerge = function(){
+  S.merging=true;S.mergeT=0;
+  document.getElementById('merge-btn').style.display='none';
+  document.getElementById('stage-n').textContent='DISSOLVING INTO LIGHT';
+  document.getElementById('stage-d').textContent='The deity merges with your own awareness';
+};
+
+// Keyboard
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'&&!e.repeat){
+    e.preventDefault();
+    const intro=document.getElementById('intro');
+    if(intro.style.display!=='none'&&!intro.classList.contains('off')) startApp(false);
+    else{
+      if(S.arActive&&!S.placed){S.placed=true;root.visible=true;document.getElementById('reticle-hint').style.display='none';}
+      chant(false);
+    }
+  }
+});
+
+// Touch for AR
+let touchChantOk=true;
+document.addEventListener('touchstart',e=>{
+  if(S.arActive&&!S.placed){S.placed=true;root.visible=true;document.getElementById('reticle-hint').style.display='none';return;}
+  // Avoid double-trigger with button clicks
+  if(e.target.closest('#ctrls,#top-bar,.panel,#merge-btn,#dbg-ctrls,#audio-dbg')) return;
+  if(touchChantOk){touchChantOk=false;chant(false);setTimeout(()=>touchChantOk=true,300);}
+},{passive:true});
+
+// Resize
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+  composer.setSize(innerWidth,innerHeight);
+});
+
+// Init
+setColors();
+updStage();
+</script>
+</body>
+</html>
